@@ -99,3 +99,22 @@ Dia de trading contado a partir do fechamento de NY (22:00 UTC de 03/11).
 *Análise técnica automatizada feita a partir de dados spot ao vivo. Não é
 recomendação de investimento. Scripts em `analysis/`: `fx_fetch.py` (coleta),
 `fx_analyze.py` (indicadores + força), `fx_setups.py` (pontuação de setups).*
+
+## Atualização 13:58 UTC: o que deu errado
+
+- **Feed spot:** a máxima de USDCHF depois do sinal foi **0.81617** (13:56 UTC) e
+  o preço está em 0.8159 às 13:57:43. No feed mid, o stop de 0.8166 ficou 4 pips
+  acima e não foi tocado. Um stop executado na corretora indica cotação ask mais
+  alta, spread alargado ou stop mais apertado do que o publicado.
+- **De qualquer forma, a tese perdeu validade.** O preço rompeu o teto da
+  micro-faixa (0.8158) e quebrou a sequência de topos descendentes da 2ª perna.
+- **Causa:** o fluxo virou contra a operação. Na abertura de NY, o USD passou de
+  moeda mais fraca a mais forte no curto prazo (15 min +0.04 %, 1 h +0.03 %), e o
+  CHF ficou negativo em 1 h (−0.05 %).
+- **Erro de leitura:** no snapshot do sinal (13:42), o USD já era a moeda mais
+  forte na janela de 15 min (+0.02 %). O scanner dava peso pequeno a essa janela e
+  peso grande à força acumulada do dia (1.7× o ADR). Esse primeiro sinal de
+  cobertura de vendidos em USD na abertura de NY deveria ter vetado a entrada.
+- **Situação às 13:58:** nenhum dos 72 setups passa ao mesmo tempo no filtro de
+  localização e no de retomada. O USD está em correção contra a tendência do dia e
+  o ISM de Serviços sai às 15:00 UTC. **Sem nova entrada até o fluxo se definir.**
