@@ -1,0 +1,706 @@
+{
+ "EURUSD": {
+  "ts_ms": 1793804811738,
+  "fetched_at": 1793804811.9608014,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.12434,
+    "ask": 1.1245
+   },
+   "prime": {
+    "bid": 1.12435,
+    "ask": 1.12448
+   },
+   "elite": {
+    "bid": 1.1244,
+    "ask": 1.12443
+   }
+  }
+ },
+ "GBPUSD": {
+  "ts_ms": 1793804811735,
+  "fetched_at": 1793804811.9857829,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.34727,
+    "ask": 1.34742
+   },
+   "prime": {
+    "bid": 1.34729,
+    "ask": 1.34739
+   },
+   "elite": {
+    "bid": 1.34733,
+    "ask": 1.34735
+   }
+  }
+ },
+ "USDJPY": {
+  "ts_ms": 1793804811930,
+  "fetched_at": 1793804811.992778,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 158.564,
+    "ask": 158.579
+   },
+   "prime": {
+    "bid": 158.567,
+    "ask": 158.575
+   },
+   "elite": {
+    "bid": 158.57,
+    "ask": 158.572
+   }
+  }
+ },
+ "USDCHF": {
+  "ts_ms": 1793804811988,
+  "fetched_at": 1793804812.2620103,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.81788,
+    "ask": 0.81803
+   },
+   "prime": {
+    "bid": 0.81789,
+    "ask": 0.81801
+   },
+   "elite": {
+    "bid": 0.81794,
+    "ask": 0.81796
+   }
+  }
+ },
+ "USDCAD": {
+  "ts_ms": 1793804811845,
+  "fetched_at": 1793804812.0009012,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.39539,
+    "ask": 1.39555
+   },
+   "prime": {
+    "bid": 1.39539,
+    "ask": 1.39554
+   },
+   "elite": {
+    "bid": 1.39545,
+    "ask": 1.39548
+   }
+  }
+ },
+ "AUDUSD": {
+  "ts_ms": 1793804812125,
+  "fetched_at": 1793804812.5211675,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.70163,
+    "ask": 0.70177
+   },
+   "prime": {
+    "bid": 0.70164,
+    "ask": 0.70175
+   },
+   "elite": {
+    "bid": 0.70169,
+    "ask": 0.7017
+   }
+  }
+ },
+ "NZDUSD": {
+  "ts_ms": 1793804811910,
+  "fetched_at": 1793804812.167359,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.56264,
+    "ask": 0.56282
+   },
+   "prime": {
+    "bid": 0.56265,
+    "ask": 0.5628
+   },
+   "elite": {
+    "bid": 0.56271,
+    "ask": 0.56274
+   }
+  }
+ },
+ "EURGBP": {
+  "ts_ms": 1793804811733,
+  "fetched_at": 1793804812.235432,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.83447,
+    "ask": 0.83464
+   },
+   "prime": {
+    "bid": 0.83449,
+    "ask": 0.83461
+   },
+   "elite": {
+    "bid": 0.83454,
+    "ask": 0.83456
+   }
+  }
+ },
+ "EURJPY": {
+  "ts_ms": 1793804811938,
+  "fetched_at": 1793804812.3808424,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 178.292,
+    "ask": 178.313
+   },
+   "prime": {
+    "bid": 178.294,
+    "ask": 178.31
+   },
+   "elite": {
+    "bid": 178.299,
+    "ask": 178.305
+   }
+  }
+ },
+ "EURCHF": {
+  "ts_ms": 1793804810996,
+  "fetched_at": 1793804812.4214485,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.91961,
+    "ask": 0.91981
+   },
+   "prime": {
+    "bid": 0.91963,
+    "ask": 0.91978
+   },
+   "elite": {
+    "bid": 0.91968,
+    "ask": 0.91973
+   }
+  }
+ },
+ "EURCAD": {
+  "ts_ms": 1793804811984,
+  "fetched_at": 1793804812.4378583,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.56893,
+    "ask": 1.56913
+   },
+   "prime": {
+    "bid": 1.56894,
+    "ask": 1.56911
+   },
+   "elite": {
+    "bid": 1.569,
+    "ask": 1.56905
+   }
+  }
+ },
+ "EURAUD": {
+  "ts_ms": 1793804812373,
+  "fetched_at": 1793804812.4521964,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.60233,
+    "ask": 1.60252
+   },
+   "prime": {
+    "bid": 1.60234,
+    "ask": 1.6025
+   },
+   "elite": {
+    "bid": 1.6024,
+    "ask": 1.60244
+   }
+  }
+ },
+ "EURNZD": {
+  "ts_ms": 1793804812341,
+  "fetched_at": 1793804812.582678,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.99795,
+    "ask": 1.99836
+   },
+   "prime": {
+    "bid": 1.99798,
+    "ask": 1.99832
+   },
+   "elite": {
+    "bid": 1.99805,
+    "ask": 1.99826
+   }
+  }
+ },
+ "GBPJPY": {
+  "ts_ms": 1793804812613,
+  "fetched_at": 1793804812.6969838,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 213.638,
+    "ask": 213.663
+   },
+   "prime": {
+    "bid": 213.639,
+    "ask": 213.661
+   },
+   "elite": {
+    "bid": 213.645,
+    "ask": 213.655
+   }
+  }
+ },
+ "GBPCHF": {
+  "ts_ms": 1793804812556,
+  "fetched_at": 1793804812.7088304,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.10196,
+    "ask": 1.10212
+   },
+   "prime": {
+    "bid": 1.10197,
+    "ask": 1.1021
+   },
+   "elite": {
+    "bid": 1.10203,
+    "ask": 1.10204
+   }
+  }
+ },
+ "GBPCAD": {
+  "ts_ms": 1793804812620,
+  "fetched_at": 1793804812.7966502,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.88004,
+    "ask": 1.88026
+   },
+   "prime": {
+    "bid": 1.88006,
+    "ask": 1.88023
+   },
+   "elite": {
+    "bid": 1.88011,
+    "ask": 1.88018
+   }
+  }
+ },
+ "GBPAUD": {
+  "ts_ms": 1793804812795,
+  "fetched_at": 1793804812.8621495,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.92001,
+    "ask": 1.92021
+   },
+   "prime": {
+    "bid": 1.92003,
+    "ask": 1.92018
+   },
+   "elite": {
+    "bid": 1.92008,
+    "ask": 1.92013
+   }
+  }
+ },
+ "GBPNZD": {
+  "ts_ms": 1793804812810,
+  "fetched_at": 1793804812.8801656,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 2.39406,
+    "ask": 2.39454
+   },
+   "prime": {
+    "bid": 2.39409,
+    "ask": 2.3945
+   },
+   "elite": {
+    "bid": 2.39416,
+    "ask": 2.39444
+   }
+  }
+ },
+ "AUDJPY": {
+  "ts_ms": 1793804812772,
+  "fetched_at": 1793804812.9036605,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 111.263,
+    "ask": 111.283
+   },
+   "prime": {
+    "bid": 111.264,
+    "ask": 111.281
+   },
+   "elite": {
+    "bid": 111.27,
+    "ask": 111.275
+   }
+  }
+ },
+ "CADJPY": {
+  "ts_ms": 1793804812776,
+  "fetched_at": 1793804812.973957,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 113.629,
+    "ask": 113.645
+   },
+   "prime": {
+    "bid": 113.63,
+    "ask": 113.643
+   },
+   "elite": {
+    "bid": 113.636,
+    "ask": 113.637
+   }
+  }
+ },
+ "CHFJPY": {
+  "ts_ms": 1793804812859,
+  "fetched_at": 1793804812.9935055,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 193.858,
+    "ask": 193.883
+   },
+   "prime": {
+    "bid": 193.859,
+    "ask": 193.881
+   },
+   "elite": {
+    "bid": 193.865,
+    "ask": 193.875
+   }
+  }
+ },
+ "NZDJPY": {
+  "ts_ms": 1793804812875,
+  "fetched_at": 1793804813.1439288,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 89.227,
+    "ask": 89.245
+   },
+   "prime": {
+    "bid": 89.229,
+    "ask": 89.242
+   },
+   "elite": {
+    "bid": 89.234,
+    "ask": 89.237
+   }
+  }
+ },
+ "AUDCAD": {
+  "ts_ms": 1793804813096,
+  "fetched_at": 1793804813.1567323,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.97909,
+    "ask": 0.97927
+   },
+   "prime": {
+    "bid": 0.97911,
+    "ask": 0.97924
+   },
+   "elite": {
+    "bid": 0.97916,
+    "ask": 0.97919
+   }
+  }
+ },
+ "AUDCHF": {
+  "ts_ms": 1793804813096,
+  "fetched_at": 1793804813.2016935,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.57386,
+    "ask": 0.57404
+   },
+   "prime": {
+    "bid": 0.57388,
+    "ask": 0.57401
+   },
+   "elite": {
+    "bid": 0.57393,
+    "ask": 0.57396
+   }
+  }
+ },
+ "AUDNZD": {
+  "ts_ms": 1793804813094,
+  "fetched_at": 1793804813.3073757,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.2468,
+    "ask": 1.24709
+   },
+   "prime": {
+    "bid": 1.24681,
+    "ask": 1.24708
+   },
+   "elite": {
+    "bid": 1.24687,
+    "ask": 1.24702
+   }
+  }
+ },
+ "NZDCAD": {
+  "ts_ms": 1793804813097,
+  "fetched_at": 1793804813.3434808,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.78515,
+    "ask": 0.78537
+   },
+   "prime": {
+    "bid": 0.78519,
+    "ask": 0.78534
+   },
+   "elite": {
+    "bid": 0.78525,
+    "ask": 0.78527
+   }
+  }
+ },
+ "NZDCHF": {
+  "ts_ms": 1793804812738,
+  "fetched_at": 1793804813.3527877,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.4602,
+    "ask": 0.46038
+   },
+   "prime": {
+    "bid": 0.46021,
+    "ask": 0.46036
+   },
+   "elite": {
+    "bid": 0.46027,
+    "ask": 0.4603
+   }
+  }
+ },
+ "CADCHF": {
+  "ts_ms": 1793804812717,
+  "fetched_at": 1793804813.4426415,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 0.58607,
+    "ask": 0.58625
+   },
+   "prime": {
+    "bid": 0.58608,
+    "ask": 0.58623
+   },
+   "elite": {
+    "bid": 0.58614,
+    "ask": 0.58617
+   }
+  }
+ },
+ "USDSEK": {
+  "ts_ms": 1793804813310,
+  "fetched_at": 1793804813.4056497,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 9.76051,
+    "ask": 9.76259
+   },
+   "prime": {
+    "bid": 9.76064,
+    "ask": 9.76246
+   },
+   "elite": {
+    "bid": 9.7609,
+    "ask": 9.76221
+   }
+  }
+ },
+ "USDNOK": {
+  "ts_ms": 1793804813055,
+  "fetched_at": 1793804813.5864456,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 9.25855,
+    "ask": 9.26068
+   },
+   "prime": {
+    "bid": 9.25862,
+    "ask": 9.26061
+   },
+   "elite": {
+    "bid": 9.25893,
+    "ask": 9.26029
+   }
+  }
+ },
+ "USDSGD": {
+  "ts_ms": 1793804812631,
+  "fetched_at": 1793804813.6026802,
+  "server": {
+   "platform": "SwissquoteLtd",
+   "server": "Live5"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 1.27859,
+    "ask": 1.27894
+   },
+   "prime": {
+    "bid": 1.27861,
+    "ask": 1.27892
+   },
+   "elite": {
+    "bid": 1.27874,
+    "ask": 1.27879
+   }
+  }
+ },
+ "USDMXN": {
+  "ts_ms": 1793804813428,
+  "fetched_at": 1793804813.6142347,
+  "server": {
+   "platform": "SwissquoteCapitalMarkets",
+   "server": "Live7"
+  },
+  "profiles": {
+   "premium": {
+    "bid": 18.65802,
+    "ask": 18.66105
+   },
+   "prime": {
+    "bid": 18.65856,
+    "ask": 18.66051
+   },
+   "elite": {
+    "bid": 18.65872,
+    "ask": 18.66035
+   }
+  }
+ }
+}
