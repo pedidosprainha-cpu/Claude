@@ -1,145 +1,219 @@
 #!/usr/bin/env python3
-"""Multi-timeframe technical analysis engine for the fetched FX basket.
+"""Multi-timeframe technical engine for the 38-pair live spot basket.
 
-For each pair: builds 5m/15m/1h/1d frames, computes EMA(8/20/50/200), RSI(14),
-MACD(12,26,9), ATR(14), ADX(14), Bollinger(20,2), donchian/session levels,
-then scores directional momentum + continuation quality and flags
-pullback/reversal risk (exhaustion, key-level proximity, RSI extremes,
-overextension vs ATR).
+Per pair: M1/M5/M15/H1/H4/D1 frames -> EMA(8/21/50/200), RSI(14), MACD(12,26,9),
+ATR(14), ADX(14)/DI, stacked-EMA alignment; FX trading day from the 22:00 UTC
+NY close; fractal swing levels (H1, D1), prior day/week extremes and round
+numbers as S/R; 28-cross currency-strength meter; room-to-level, overextension
+and pullback->resumption timing. Output: ranked continuation candidates with
+explicit rejection reasons (top-buying / bottom-selling filter).
 """
-import json, os, math
-import pandas as pd, numpy as np
+import json, os, sys
+import numpy as np, pandas as pd
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-PAIRS = ["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD",
-         "EURJPY","GBPJPY","AUDJPY","CADJPY","CHFJPY","NZDJPY",
-         "EURGBP","EURAUD","EURCHF","EURCAD","GBPCHF","GBPAUD","AUDNZD"]
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA = os.path.join(HERE, "data")
+sys.path.insert(0, HERE)
+from fx_fetch import PAIRS  # noqa: E402
 
-def load(pair, interval):
-    with open(f"{DATA}/{pair}_{interval}.json") as f:
-        d = json.load(f)
-    r = d["chart"]["result"][0]
-    ts = r["timestamp"]
+MAJ = ["USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD"]
+
+def load(p, i):
+    r = json.load(open(f"{DATA}/{p}_{i}.json"))["chart"]["result"][0]
     q = r["indicators"]["quote"][0]
     df = pd.DataFrame({"o": q["open"], "h": q["high"], "l": q["low"], "c": q["close"]},
-                      index=pd.to_datetime(ts, unit="s", utc=True))
-    df = df.dropna()
-    meta = r["meta"]
-    return df, meta
+                      index=pd.to_datetime(r["timestamp"], unit="s", utc=True)).dropna()
+    df = df[(df.h >= df.l) & (df.c > 0)]
+    return df, r["meta"]
 
-def ema(s, n): return s.ewm(span=n, adjust=False).mean()
+def rs(df, rule, offset=None):
+    return df.resample(rule, offset=offset).agg({"o": "first", "h": "max", "l": "min", "c": "last"}).dropna()
+
+ema = lambda s, n: s.ewm(span=n, adjust=False).mean()
 
 def rsi(c, n=14):
     d = c.diff()
     up = d.clip(lower=0).ewm(alpha=1/n, adjust=False).mean()
     dn = (-d.clip(upper=0)).ewm(alpha=1/n, adjust=False).mean()
-    rs = up / dn
-    return 100 - 100/(1+rs)
+    return 100 - 100/(1 + up/dn)
 
-def atr(df, n=14):
-    tr = pd.concat([df.h-df.l, (df.h-df.c.shift()).abs(), (df.l-df.c.shift()).abs()], axis=1).max(axis=1)
-    return tr.ewm(alpha=1/n, adjust=False).mean()
+def tr(df):
+    return pd.concat([df.h-df.l, (df.h-df.c.shift()).abs(), (df.l-df.c.shift()).abs()], axis=1).max(axis=1)
+
+atr = lambda df, n=14: tr(df).ewm(alpha=1/n, adjust=False).mean()
 
 def adx(df, n=14):
-    up = df.h.diff(); dn = -df.l.diff()
-    plus = np.where((up>dn)&(up>0), up, 0.0)
-    minus = np.where((dn>up)&(dn>0), dn, 0.0)
-    tr = pd.concat([df.h-df.l, (df.h-df.c.shift()).abs(), (df.l-df.c.shift()).abs()], axis=1).max(axis=1)
-    atr_ = tr.ewm(alpha=1/n, adjust=False).mean()
-    pdi = 100*pd.Series(plus, index=df.index).ewm(alpha=1/n, adjust=False).mean()/atr_
-    mdi = 100*pd.Series(minus, index=df.index).ewm(alpha=1/n, adjust=False).mean()/atr_
+    up, dn = df.h.diff(), -df.l.diff()
+    plus = pd.Series(np.where((up > dn) & (up > 0), up, 0.0), index=df.index)
+    minus = pd.Series(np.where((dn > up) & (dn > 0), dn, 0.0), index=df.index)
+    a = atr(df, n)
+    pdi = 100*plus.ewm(alpha=1/n, adjust=False).mean()/a
+    mdi = 100*minus.ewm(alpha=1/n, adjust=False).mean()/a
     dx = 100*(pdi-mdi).abs()/(pdi+mdi)
     return dx.ewm(alpha=1/n, adjust=False).mean(), pdi, mdi
 
-def macd(c):
-    line = ema(c,12)-ema(c,26)
-    sig = line.ewm(span=9, adjust=False).mean()
-    return line, sig, line-sig
+def macd_hist(c):
+    line = ema(c, 12) - ema(c, 26)
+    return line - line.ewm(span=9, adjust=False).mean()
 
-def pip(pair): return 0.01 if "JPY" in pair else 0.0001
+def fractals(df, k):
+    hi, lo = [], []
+    H, L = df.h.values, df.l.values
+    for i in range(k, len(df)-k):
+        if H[i] == H[i-k:i+k+1].max(): hi.append((df.index[i], H[i]))
+        if L[i] == L[i-k:i+k+1].min(): lo.append((df.index[i], L[i]))
+    return hi, lo
 
-results = {}
+pip = lambda p: 0.01 if p.endswith("JPY") else 0.0001
+
+def tf_ind(df):
+    c = df.c
+    a, pdi, mdi = adx(df)
+    h = macd_hist(c)
+    e8, e21, e50 = ema(c, 8), ema(c, 21), ema(c, 50)
+    e200 = ema(c, 200) if len(c) >= 200 else pd.Series(np.nan, index=c.index)
+    st = 1 if e8.iloc[-1] > e21.iloc[-1] > e50.iloc[-1] else (-1 if e8.iloc[-1] < e21.iloc[-1] < e50.iloc[-1] else 0)
+    return dict(e8=e8.iloc[-1], e21=e21.iloc[-1], e50=e50.iloc[-1], e200=e200.iloc[-1],
+                rsi=rsi(c).iloc[-1], atr=atr(df).iloc[-1], adx=a.iloc[-1], pdi=pdi.iloc[-1], mdi=mdi.iloc[-1],
+                mh=h.iloc[-1], mh1=h.iloc[-2], mh2=h.iloc[-3], stack=st,
+                e21_slope=(e21.iloc[-1]-e21.iloc[-4])/atr(df).iloc[-1])
+
+def pullback(m5, td, px):
+    """Retracement vs today's impulse + M5 micro-structure (both directions)."""
+    out = {}
+    hi_t, lo_t = td.h.idxmax(), td.l.idxmin()
+    H, L = td.h.max(), td.l.min()
+    rng = H - L if H > L else np.nan
+    # long view: impulse low = lowest low before the day high
+    lo_b = td.loc[:hi_t].l.min(); out["ret_long"] = (H - px)/(H - lo_b) if H > lo_b else np.nan
+    hi_b = td.loc[:lo_t].h.max(); out["ret_short"] = (px - L)/(hi_b - L) if hi_b > L else np.nan
+    out["bars_since_hi"] = int((m5.index[-1] - hi_t)/pd.Timedelta(minutes=5))
+    out["bars_since_lo"] = int((m5.index[-1] - lo_t)/pd.Timedelta(minutes=5))
+    last = m5.iloc[-6:]
+    out["m5_last3"] = [round(float(x), 6) for x in (last.c - last.o).iloc[-3:]]
+    # higher-low / lower-high on last 18 M5 bars
+    w = m5.iloc[-18:]
+    out["hl"] = bool(w.l.iloc[-6:].min() > w.l.iloc[:12].min())
+    out["lh"] = bool(w.h.iloc[-6:].max() < w.h.iloc[:12].max())
+    return out
+
+live = json.load(open(f"{DATA}/live_snapshot.json"))
+R, frames = {}, {}
 for p in PAIRS:
-    m5, meta = load(p, "5m")
-    h1, _ = load(p, "1h")
-    d1, _ = load(p, "1d")
-    m15 = m5.resample("15min").agg({"o":"first","h":"max","l":"min","c":"last"}).dropna()
-
-    px = meta["regularMarketPrice"]; t = pd.to_datetime(meta["regularMarketTime"], unit="s", utc=True)
+    m1, meta = load(p, "1m"); m5, _ = load(p, "5m"); h1, _ = load(p, "1h"); d1y, _ = load(p, "1d")
+    m15 = rs(m5, "15min"); h4 = rs(h1, "4h", offset="2h")           # H4 aligned to 22:00 UTC close
+    d1 = d1y if len(d1y) > 200 else rs(h1, "24h", offset="22h")
+    frames[p] = dict(m1=m1, m5=m5, m15=m15, h1=h1, h4=h4, d1=d1)
+    lv = live.get(p, {})
+    bid, ask = lv.get("bid"), lv.get("ask")
+    px = (bid+ask)/2 if bid and ask else meta["regularMarketPrice"]
     pp = pip(p)
+    ind = {k: tf_ind(v) for k, v in [("m5", m5), ("m15", m15), ("h1", h1), ("h4", h4), ("d1", d1)]}
 
-    # --- indicators per TF ---
-    ind = {}
-    for name, df in [("m5",m5),("m15",m15),("h1",h1),("d1",d1)]:
-        c = df.c
-        ind[name] = dict(
-            ema8=ema(c,8).iloc[-1], ema20=ema(c,20).iloc[-1], ema50=ema(c,50).iloc[-1],
-            ema200=ema(c,200).iloc[-1] if len(c)>=200 else np.nan,
-            rsi=rsi(c).iloc[-1], atr=atr(df).iloc[-1],
-        )
-        line, sig, hist = macd(c)
-        ind[name]["macd_hist"] = hist.iloc[-1]
-        ind[name]["macd_hist_prev"] = hist.iloc[-2]
-        ind[name]["macd_line"] = line.iloc[-1]
-        a, pdi, mdi = adx(df)
-        ind[name]["adx"] = a.iloc[-1]; ind[name]["pdi"] = pdi.iloc[-1]; ind[name]["mdi"] = mdi.iloc[-1]
+    # FX trading day: from 22:00 UTC (NY 17:00, post-DST) of previous day
+    now = m5.index[-1]
+    day_start = (now - pd.Timedelta(hours=22)).normalize() + pd.Timedelta(hours=22)
+    if day_start > now: day_start -= pd.Timedelta(days=1)
+    td = m5[m5.index >= day_start]
+    prev = m5[(m5.index >= day_start - pd.Timedelta(days=1)) & (m5.index < day_start)]
+    if len(prev) < 50:   # skip weekend gap
+        prev = m5[(m5.index >= day_start - pd.Timedelta(days=3)) & (m5.index < day_start - pd.Timedelta(days=2))]
+    dh, dl, dop = max(td.h.max(), px), min(td.l.min(), px), td.o.iloc[0]
+    # ADR(20) from H1-built NY-close days
+    dny = rs(h1, "24h", offset="22h")
+    dny = dny[dny.index.dayofweek < 5]
+    adr = (dny.h-dny.l).iloc[-21:-1].mean()
 
-    # --- session/day levels (today = last UTC calendar day in 5m data) ---
-    today = m5.index[-1].date()
-    day = m5[m5.index.date == today]
-    prev_daily = d1.iloc[-2] if len(d1) >= 2 else d1.iloc[-1]
-    day_hi, day_lo, day_open = day.h.max(), day.l.min(), day.o.iloc[0]
-    asia = day[(day.index.hour >= 0) & (day.index.hour < 6)]
-    asia_hi = asia.h.max() if len(asia) else np.nan
-    asia_lo = asia.l.min() if len(asia) else np.nan
+    # weekly
+    wk_start = day_start - pd.Timedelta(days=int((day_start + pd.Timedelta(hours=2)).dayofweek))
+    wk = h1[h1.index >= wk_start]
+    pw = h1[(h1.index >= wk_start - pd.Timedelta(days=7)) & (h1.index < wk_start)]
 
-    # last-3h momentum (36 x 5m bars)
-    look = m5.c.iloc[-36:]
-    chg3h = (look.iloc[-1]-look.iloc[0])
-    chg3h_atr = chg3h / (ind["h1"]["atr"] if ind["h1"]["atr"] else np.nan)
-    chg1h = m5.c.iloc[-1]-m5.c.iloc[-12]
-    # consistency: fraction of last 12 m15 bars closing in move direction
-    dirn = np.sign(chg3h) if chg3h != 0 else 1
-    last12 = m15.iloc[-12:]
-    consist = float(((last12.c-last12.o)*dirn > 0).mean())
+    # S/R levels
+    hfh, hfl = fractals(h1.iloc[-24*15:], 8)
+    dfh, dfl = fractals(d1.iloc[-160:], 3)
+    levels = [x[1] for x in hfh + hfl + dfh + dfl] + [prev.h.max(), prev.l.min(), pw.h.max(), pw.l.min()]
+    rnd = 100*pp if not p.endswith("JPY") else 0.5
+    if p in ("USDMXN", "USDZAR", "USDNOK", "USDSEK", "EURNOK", "EURSEK"): rnd = 0.05
+    base_r = np.floor(px/rnd)*rnd
+    rounds = [base_r + k*rnd for k in range(-3, 5)]
+    a15, a1 = ind["m15"]["atr"], ind["h1"]["atr"]
+    buf = 0.15*a15
+    res_above = sorted([l for l in levels + rounds if l > px + buf])
+    sup_below = sorted([l for l in levels + rounds if l < px - buf], reverse=True)
+    # strongest structural levels only (not rounds) for room calc
+    res_struct = sorted([l for l in levels if l > px + buf])
+    sup_struct = sorted([l for l in levels if l < px - buf], reverse=True)
 
-    # daily context
-    dchg = px - prev_daily.c
-    week_open = day_open  # Monday: day open == week open
+    def chg(df, bars): return (df.c.iloc[-1]/df.c.iloc[-1-bars]-1)*100 if len(df) > bars else np.nan
+    R[p] = dict(px=px, bid=bid, ask=ask, spread_pips=(ask-bid)/pp if bid and ask else np.nan, pip=pp,
+        t=str(m1.index[-1]), ind=ind, day_hi=dh, day_lo=dl, day_open=dop, adr=adr, adr_pips=adr/pp,
+        used_adr=(dh-dl)/adr, pos_day=(px-dl)/(dh-dl) if dh > dl else .5,
+        dchg_pips=(px-dop)/pp, dchg_adr=(px-dop)/adr,
+        prev_hi=prev.h.max(), prev_lo=prev.l.min(), wk_hi=max(wk.h.max(), px), wk_lo=min(wk.l.min(), px),
+        pw_hi=pw.h.max(), pw_lo=pw.l.min(), wk_open=wk.o.iloc[0] if len(wk) else np.nan,
+        res=res_above[:4], sup=sup_below[:4], res_s=res_struct[:3], sup_s=sup_struct[:3],
+        ch_1h=chg(m5, 12), ch_4h=chg(m5, 48), ch_day=(px/dop-1)*100, ch_24h=chg(m5, 288),
+        ext15=(px-ind["m15"]["e21"])/a15, ext1h=(px-ind["h1"]["e21"])/a1, ext5=(px-ind["m5"]["e21"])/ind["m5"]["atr"],
+        a5=ind["m5"]["atr"], a15=a15, a1=a1, pb=pullback(m5, td, px))
 
-    # distance of price from m5 ema20 in ATRs (overextension)
-    ext5 = (px - ind["m5"]["ema20"]) / ind["m5"]["atr"] if ind["m5"]["atr"] else np.nan
+# ---- currency strength (28 crosses of the 8 majors) ----
+cs = {w: {c: [] for c in MAJ} for w in ["ch_1h", "ch_4h", "ch_day", "ch_24h"]}
+for p, r in R.items():
+    b, q = p[:3], p[3:]
+    if b in MAJ and q in MAJ:
+        for w in cs:
+            cs[w][b].append(r[w]); cs[w][q].append(-r[w])
+CS = pd.DataFrame({w: {c: np.nanmean(v) for c, v in d.items()} for w, d in cs.items()}).round(3)
+CS["score"] = (CS.ch_1h*1.0 + CS.ch_4h*1.0 + CS.ch_day*1.0 + CS.ch_24h*0.5).round(3)
+CS = CS.sort_values("score", ascending=False)
 
-    # alignment score: how many TFs agree on direction (ema8>ema20>ema50 stacked)
-    def stack(i):
-        if i["ema8"]>i["ema20"]>i["ema50"]: return 1
-        if i["ema8"]<i["ema20"]<i["ema50"]: return -1
-        return 0
-    align = {tf: stack(ind[tf]) for tf in ["m5","m15","h1","d1"]}
-
-    results[p] = dict(px=px, t=str(t), pip=pp, ind=ind, align=align,
-        day_hi=day_hi, day_lo=day_lo, day_open=day_open,
-        asia_hi=asia_hi, asia_lo=asia_lo,
-        prev_hi=prev_daily.h, prev_lo=prev_daily.l, prev_cl=prev_daily.c,
-        chg1h_pips=chg1h/pp, chg3h_pips=chg3h/pp, chg3h_atr=chg3h_atr,
-        consist=consist, ext5_atr=ext5, dchg_pips=dchg/pp,
-        atr_h1_pips=ind["h1"]["atr"]/pp, atr_d1_pips=ind["d1"]["atr"]/pp,
-        range_today_pips=(day_hi-day_lo)/pp,
-        pos_in_day=(px-day_lo)/(day_hi-day_lo) if day_hi>day_lo else 0.5)
-
-pd.set_option("display.width", 250)
+# ---- scoring ----
 rows = []
-for p, r in results.items():
-    rows.append(dict(pair=p, px=round(r["px"],5), t=r["t"][11:16],
-        al_m5=r["align"]["m5"], al_m15=r["align"]["m15"], al_h1=r["align"]["h1"], al_d1=r["align"]["d1"],
-        rsi5=round(r["ind"]["m5"]["rsi"],1), rsi15=round(r["ind"]["m15"]["rsi"],1), rsi1h=round(r["ind"]["h1"]["rsi"],1),
-        adx15=round(r["ind"]["m15"]["adx"],1), adx1h=round(r["ind"]["h1"]["adx"],1),
-        c3h=round(r["chg3h_pips"],1), c1h=round(r["chg1h_pips"],1), c3h_atr=round(r["chg3h_atr"],2),
-        cons=round(r["consist"],2), ext=round(r["ext5_atr"],2),
-        posday=round(r["pos_in_day"],2), rng=round(r["range_today_pips"],1),
-        atr1h=round(r["atr_h1_pips"],1), dchg=round(r["dchg_pips"],1)))
-df = pd.DataFrame(rows).set_index("pair")
-print(df.to_string())
+for p, r in R.items():
+    I = r["ind"]
+    tsc = I["m15"]["stack"]*1 + I["h1"]["stack"]*2 + I["h4"]["stack"]*2 + I["d1"]["stack"]*1
+    mom = np.sign(r["ch_4h"]) + np.sign(r["ch_day"]) + np.sign(r["ch_1h"])
+    d = 1 if (tsc + mom) > 0 else -1
+    b, q = p[:3], p[3:]
+    csd = (CS.score.get(b, 0) - CS.score.get(q, 0))*d if (b in MAJ and q in MAJ) else np.nan
+    # timing on M5: momentum resuming in trend direction
+    m5i = I["m5"]
+    mh_turn = (m5i["mh"]*d > 0) and ((m5i["mh"]-m5i["mh1"])*d > 0)
+    m5_ok = ((r["px"]-m5i["e8"])*d > 0)
+    room_px = (r["res_s"][0]-r["px"]) if d > 0 and r["res_s"] else ((r["px"]-r["sup_s"][0]) if d < 0 and r["sup_s"] else np.nan)
+    room_any = (r["res"][0]-r["px"]) if d > 0 and r["res"] else ((r["px"]-r["sup"][0]) if d < 0 and r["sup"] else np.nan)
+    pos_dir = r["pos_day"] if d > 0 else 1-r["pos_day"]
+    flags = []
+    if r["ext15"]*d > 1.6: flags.append("esticado M15")
+    if r["ext1h"]*d > 2.2: flags.append("esticado H1")
+    if (I["m15"]["rsi"]-50)*d > 22: flags.append("RSI15 extremo")
+    if (I["h1"]["rsi"]-50)*d > 22: flags.append("RSI1h extremo")
+    if pos_dir > 0.88 and r["used_adr"] > 0.9: flags.append("topo/fundo do dia c/ ADR gasto")
+    if room_px / r["a1"] < 1.0: flags.append("S/R estrutural < 1 ATR-H1")
+    if r["spread_pips"]*r["pip"] > 0.20*r["a15"]: flags.append("spread alto")
+    if abs(tsc) < 3: flags.append("tendência fraca/mista")
+    pb = r["pb"]
+    ret = pb["ret_long"] if d > 0 else pb["ret_short"]
+    struct_ok = pb["hl"] if d > 0 else pb["lh"]
+    if ret < 0.12 and pos_dir > 0.85: flags.append("sem pullback (perseguição)")
+    if ret > 0.75: flags.append("pullback profundo/possível reversão")
+    pb_bonus = (1.0 if 0.25 <= ret <= 0.62 else (0.4 if 0.12 <= ret <= 0.75 else 0)) + (0.5 if struct_ok else 0)
+    score = pb_bonus + (abs(tsc)/6*3 + min(max(csd, -1.5), 1.5) if not np.isnan(csd) else abs(tsc)/6*3) \
+        + (1 if mh_turn else 0) + (0.5 if m5_ok else 0) + min(room_px/r["a1"], 3)/3*1.5 \
+        + (1 if I["h1"]["adx"] > 22 else 0) - 1.2*len(flags)
+    rows.append(dict(pair=p, dir="BUY" if d > 0 else "SELL", px=r["px"], spr=round(r["spread_pips"], 1),
+        tsc=tsc, st=f'{I["m5"]["stack"]:+d}{I["m15"]["stack"]:+d}{I["h1"]["stack"]:+d}{I["h4"]["stack"]:+d}{I["d1"]["stack"]:+d}',
+        csd=round(csd, 2) if not np.isnan(csd) else None, adx1h=round(I["h1"]["adx"], 0), adx15=round(I["m15"]["adx"], 0),
+        rsi5=round(I["m5"]["rsi"]), rsi15=round(I["m15"]["rsi"]), rsi1h=round(I["h1"]["rsi"]),
+        ext15=round(r["ext15"], 2), ext1h=round(r["ext1h"], 2), posd=round(r["pos_day"], 2), adr_u=round(r["used_adr"], 2),
+        d_adr=round(r["dchg_adr"], 2), room=round(room_px/r["a1"], 2), m5t=int(mh_turn), ret=round(ret, 2), hl=int(struct_ok), score=round(score, 2), flags="; ".join(flags)))
+T = pd.DataFrame(rows).set_index("pair").sort_values("score", ascending=False)
 
-with open(os.path.join(DATA, "..", "results.json"), "w") as f:
-    json.dump(results, f, default=str, indent=1)
+if __name__ == "__main__":
+    pd.set_option("display.width", 260); pd.set_option("display.max_columns", 40); pd.set_option("display.max_colwidth", 70)
+    print("snapshot:", live["fetched_utc"], "UTC | last candle:", R["EURUSD"]["t"])
+    print("\n== CURRENCY STRENGTH (% avg vs 7 peers) ==\n", CS.to_string())
+    print("\n== RANKING ==\n", T.to_string())
+    json.dump({p: {k: v for k, v in r.items()} for p, r in R.items()}, open(f"{HERE}/results.json", "w"), default=str, indent=1)
+    T.to_csv(f"{HERE}/ranking.csv")
