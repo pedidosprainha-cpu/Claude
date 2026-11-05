@@ -1,0 +1,11 @@
+{
+  "name": "mamonas-assassinas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vídeo 04 - A banda que vendeu 2 milhões de discos e durou 8 meses (ilustrações próprias)",
+  "dependencies": {
+    "@napi-rs/canvas": "0.1.65",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  }
+}

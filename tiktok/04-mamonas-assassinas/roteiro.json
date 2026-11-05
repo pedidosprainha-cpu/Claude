@@ -1,0 +1,18 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+12%",
+  "tom": "-2Hz",
+  "falas": [
+    {"id": "hook",      "texto": "Uma banda brasileira vendeu mais de dois milhões de discos com um único álbum... e a fama durou só oito meses."},
+    {"id": "antes",     "texto": "No comecinho dos anos noventa, cinco amigos de Guarulhos tinham uma banda de rock sério: a Utopia."},
+    {"id": "fracasso",  "texto": "Gravaram um disco... e quase ninguém comprou."},
+    {"id": "virada",    "texto": "Mas nos shows, a plateia gostava mesmo era quando eles faziam palhaçada no palco."},
+    {"id": "nome",      "texto": "Então eles mudaram tudo. Viraram uma banda de humor... e trocaram o nome pra Mamonas Assassinas."},
+    {"id": "explosao",  "texto": "Em mil novecentos e noventa e cinco, o primeiro disco saiu e explodiu: mais de dois milhões de cópias."},
+    {"id": "pilha",     "texto": "Empilhando esses CDs, a pilha teria vinte quilômetros de altura. Mais que duas vezes o Everest."},
+    {"id": "fenomeno",  "texto": "Eles estavam em todo lugar: na TV, no rádio, em festa de criança e de adulto."},
+    {"id": "queda",     "texto": "Até que, em dois de março de mil novecentos e noventa e seis, o avião que levava a banda caiu. Nenhum dos cinco sobreviveu."},
+    {"id": "legado",    "texto": "Foram só oito meses de sucesso. Mas, trinta anos depois, o Brasil ainda sabe as músicas deles de cor."},
+    {"id": "cta",       "texto": "Segue pra mais curiosidades aleatórias."}
+  ]
+}
