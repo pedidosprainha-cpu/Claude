@@ -1,0 +1,29 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+12%",
+  "tom": "-2Hz",
+  "falas": [
+    {"id": "hook",      "texto": "Se você dobrar uma folha de papel quarenta e duas vezes... ela chega até a Lua."},
+    {"id": "mentira",   "texto": "Parece mentira. Mas é pura matemática."},
+    {"id": "espessura", "texto": "Uma folha comum tem só um décimo de milímetro."},
+    {"id": "dobra",     "texto": "E cada dobra... dobra a espessura."},
+    {"id": "comeco",    "texto": "No começo, parece que nada acontece."},
+    {"id": "f7",        "texto": "Sete dobras: a grossura de um caderno."},
+    {"id": "f10",       "texto": "Dez: a altura de uma xícara."},
+    {"id": "f14",       "texto": "Catorze: a altura de uma pessoa."},
+    {"id": "f17",       "texto": "Dezessete: um prédio de quatro andares."},
+    {"id": "f23",       "texto": "Vinte e três: passa o Burj Khalifa, o prédio mais alto do mundo."},
+    {"id": "f27",       "texto": "Vinte e sete: mais alta que o Everest."},
+    {"id": "f30",       "texto": "Trinta: você chegou ao espaço."},
+    {"id": "f32",       "texto": "Trinta e duas: passa a Estação Espacial."},
+    {"id": "f42",       "texto": "E com quarenta e duas... você toca a Lua."},
+    {"id": "f51",       "texto": "Com cinquenta e uma, passa do Sol."},
+    {"id": "f103",      "texto": "E com cento e três... fica maior que o universo observável inteiro."},
+    {"id": "mito",      "texto": "Mas dizem que é impossível dobrar uma folha mais de sete vezes."},
+    {"id": "errado",    "texto": "Errado."},
+    {"id": "britney",   "texto": "Em dois mil e dois, uma estudante americana dobrou papel doze vezes..."},
+    {"id": "rolo",      "texto": "usando um rolo de papel higiênico de mais de um quilômetro."},
+    {"id": "licao",     "texto": "Isso é crescimento exponencial: começa devagar... e depois explode."},
+    {"id": "cta",       "texto": "Segue pra mais ciência que parece mentira."}
+  ]
+}
