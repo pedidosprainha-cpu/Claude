@@ -1,0 +1,11 @@
+{
+  "name": "terra-em-24-horas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vídeo 02 - A história da Terra em 24 horas",
+  "dependencies": {
+    "@iconify-json/fluent-emoji": "^1.2.7",
+    "@iconify/utils": "^3.1.7",
+    "@napi-rs/canvas": "0.1.65"
+  }
+}

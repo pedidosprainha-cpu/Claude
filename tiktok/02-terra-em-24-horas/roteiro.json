@@ -1,0 +1,23 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+12%",
+  "tom": "-2Hz",
+  "falas": [
+    {"id": "hook",      "texto": "Se toda a história da Terra coubesse em um único dia... nós só apareceríamos nos últimos seis segundos."},
+    {"id": "acelera",   "texto": "Bora acelerar o tempo. Cada hora vale cento e oitenta e nove milhões de anos."},
+    {"id": "nasce",     "texto": "Meia-noite: a Terra nasce. Uma bola de rocha derretida."},
+    {"id": "lua",       "texto": "Meia-noite e treze, um planeta do tamanho de Marte bate em cheio na Terra... e os destroços formam a Lua."},
+    {"id": "vida",      "texto": "Quatro da manhã: surge a primeira vida. Micróbios minúsculos, no oceano."},
+    {"id": "tedio",     "texto": "E aí... por horas e horas, quase nada muda. A vida continua microscópica."},
+    {"id": "oxigenio",  "texto": "Perto do meio-dia, bactérias começam a encher o ar de oxigênio."},
+    {"id": "animais",   "texto": "Nove da noite: finalmente, os mares se enchem de animais."},
+    {"id": "dinos",     "texto": "Quinze pras onze, chegam os dinossauros."},
+    {"id": "asteroide", "texto": "E às onze e trinta e nove... um asteroide acaba com a festa."},
+    {"id": "mamiferos", "texto": "Os mamíferos assumem o planeta."},
+    {"id": "humanos",   "texto": "E nós? Só aparecemos seis segundos antes da meia-noite."},
+    {"id": "piramides", "texto": "As pirâmides do Egito? Menos de um décimo de segundo atrás."},
+    {"id": "vidahum",   "texto": "E uma vida inteira de oitenta anos... dura um milésimo e meio de segundo."},
+    {"id": "reflexao",  "texto": "Então pensa bem no que você vai fazer com o seu."},
+    {"id": "cta",       "texto": "Segue pra mais curiosidades aleatórias."}
+  ]
+}
