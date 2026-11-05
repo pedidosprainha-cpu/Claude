@@ -1,0 +1,7 @@
+{
+  "name": "a-musica-que-tiraram-do-ar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vídeo 05 - A música que tiraram do ar em 1992 (acervo real com licenças livres)",
+  "dependencies": { "@napi-rs/canvas": "0.1.65" }
+}

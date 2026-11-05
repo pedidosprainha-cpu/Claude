@@ -1,0 +1,19 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+12%",
+  "tom": "-2Hz",
+  "falas": [
+    {"id": "hook",       "texto": "Em mil novecentos e noventa e dois, essa música foi tirada das rádios... porque falava do presidente da República."},
+    {"id": "fita",       "texto": "Em setembro daquele ano, um garoto carioca de dezoito anos gravou uma fita demo e mandou pra uma rádio do Rio."},
+    {"id": "titulo",     "texto": "A música se chamava: Tô Feliz, Matei o Presidente."},
+    {"id": "contexto",   "texto": "Era um protesto contra Fernando Collor, o presidente que tinha confiscado a poupança dos brasileiros... e que agora estava no meio de um escândalo de corrupção."},
+    {"id": "sucesso",    "texto": "A rádio tocou... e em cinco dias a música já estava entre as mais pedidas."},
+    {"id": "pressao",    "texto": "Mas aí, as rádios que tocavam a música começaram a ser pressionadas pra tirar ela do ar."},
+    {"id": "mae",        "texto": "E tem um detalhe: a mãe do garoto tinha trabalhado na campanha do próprio Collor."},
+    {"id": "ruas",       "texto": "Enquanto isso, milhares de jovens, os caras-pintadas, tomavam as ruas pedindo o impeachment."},
+    {"id": "impeach",    "texto": "Menos de um mês depois da estreia da música, a Câmara aprovou o impeachment. Collor foi afastado."},
+    {"id": "gabriel",    "texto": "E o garoto? Virou Gabriel o Pensador. A música que tentaram calar abriu caminho pra uma carreira de mais de trinta anos."},
+    {"id": "final",      "texto": "Ah... e em dois mil e vinte e cinco, o próprio Collor foi preso."},
+    {"id": "cta",        "texto": "Segue pra mais curiosidades aleatórias."}
+  ]
+}
