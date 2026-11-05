@@ -1,0 +1,18 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+10%",
+  "tom": "-3Hz",
+  "falas": [
+    {"id": "hook",       "texto": "Se o Sol desaparecesse agora... você continuaria vendo ele brilhar por mais oito minutos."},
+    {"id": "luz",        "texto": "Porque a luz, a coisa mais rápida do universo, ainda leva tempo pra chegar até os seus olhos."},
+    {"id": "lua",        "texto": "A Lua que você vê é a Lua de um segundo atrás."},
+    {"id": "sol",        "texto": "O Sol? É o Sol de oito minutos e vinte segundos atrás."},
+    {"id": "proxima",    "texto": "Proxima Centauri, a estrela mais próxima: você vê como ela era há mais de quatro anos."},
+    {"id": "betelgeuse", "texto": "Betelgeuse, a estrela vermelha de Órion: se ela explodisse hoje, a gente só ia ver daqui a mais de quinhentos anos."},
+    {"id": "andromeda",  "texto": "Andrômeda, a galáxia vizinha: essa luz saiu de lá há dois milhões e meio de anos... quando nossos ancestrais ainda nem dominavam o fogo."},
+    {"id": "webb",       "texto": "E o telescópio James Webb já captou luz que viajou mais de treze bilhões de anos... quase desde o começo do universo."},
+    {"id": "virada",     "texto": "Mas não é só no espaço. Até a pessoa do seu lado, a um metro de você... você vê como ela era há três bilionésimos de segundo."},
+    {"id": "fecho",      "texto": "Tudo o que você vê já aconteceu. Ninguém nunca viu o presente."},
+    {"id": "cta",        "texto": "Segue pra mais curiosidades aleatórias."}
+  ]
+}

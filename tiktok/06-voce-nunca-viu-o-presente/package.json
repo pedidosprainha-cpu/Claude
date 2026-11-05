@@ -1,0 +1,7 @@
+{
+  "name": "voce-nunca-viu-o-presente",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ciência #4 - Você nunca viu o presente (imagens NASA/ESA/ESO)",
+  "dependencies": { "@napi-rs/canvas": "0.1.65" }
+}
