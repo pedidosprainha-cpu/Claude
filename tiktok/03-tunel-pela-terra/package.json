@@ -1,0 +1,13 @@
+{
+  "name": "tunel-pela-terra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vídeo 03 - E se você pulasse num túnel que atravessa a Terra?",
+  "dependencies": {
+    "@iconify-json/fluent-emoji": "^1.2.7",
+    "@iconify/utils": "^3.1.7",
+    "@napi-rs/canvas": "0.1.65",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  }
+}

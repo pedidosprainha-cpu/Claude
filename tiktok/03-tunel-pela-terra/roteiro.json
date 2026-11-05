@@ -1,0 +1,17 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+12%",
+  "tom": "-2Hz",
+  "falas": [
+    {"id": "hook",     "texto": "Se você pulasse num túnel que atravessa a Terra inteira... chegaria do outro lado em só trinta e oito minutos."},
+    {"id": "pulo",     "texto": "Bora pular. Sem ar no túnel, você cai cada vez mais rápido... e flutua, sem peso nenhum, o caminho todo."},
+    {"id": "crosta",   "texto": "Em um minuto e meio, você atravessa a crosta. Uma casquinha de trinta e cinco quilômetros."},
+    {"id": "manto",    "texto": "Depois, quase três mil quilômetros de manto: rocha tão quente que se move, bem devagar, como massinha."},
+    {"id": "nucleo",   "texto": "Aos treze minutos, você entra no núcleo externo: um oceano de ferro derretido, que cria o campo magnético da Terra."},
+    {"id": "centro",   "texto": "E no centro, uma bola de ferro sólido, tão quente quanto a superfície do Sol. Você passa por ela a mais de trinta e cinco mil quilômetros por hora."},
+    {"id": "freio",    "texto": "A partir daí, a gravidade te freia... até você parar, exatamente na saída do outro lado."},
+    {"id": "onde",     "texto": "E se você pulasse aqui do Brasil? Ia sair no meio do oceano Pacífico... entre o Japão e as Filipinas."},
+    {"id": "volta",    "texto": "Mas se ninguém te segurar... você cai de volta. E fica indo e voltando, pra sempre."},
+    {"id": "cta",      "texto": "Segue pra mais curiosidades aleatórias."}
+  ]
+}
