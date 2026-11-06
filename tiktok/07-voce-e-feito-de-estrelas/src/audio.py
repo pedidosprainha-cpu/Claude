@@ -345,7 +345,7 @@ def main():
         add(sfx, tick(), t, 0.05); t += 0.42
     # hidrogênio: recuo e Big Bang
     add(sfx, riser(tBang - Wt("hidrogenio", 10)), Wt("hidrogenio", 10), 0.15)
-    add(sfx, impact(1.6), tBang, 0.3); add(sfx, rumble(3.5), tBang, 0.14)
+    add(sfx, impact(1.6), tBang, 0.24); add(sfx, rumble(3.5), tBang, 0.11)
     add(sfx, whoosh(2.0, 80, 2500), tBang + 0.05, 0.18)
     # carbono: as partículas do DNA se espalham
     add(sfx, sparkle(1.6, 1760.0), Wt("carbono", 11), 0.25, pan=0.2)
@@ -374,7 +374,7 @@ def main():
         add(sfx, bell(f, 2.4, 1.2), tVoce + k * 0.06, 0.12)
     add(sfx, sparkle(1.8, 2349.3), tVoce, 0.3)
     # fecho e encerramento
-    add(sfx, gong(73.42, 5.0), Wt("fecho", 7), 0.12)
+    add(sfx, gong(73.42, 5.0), Wt("fecho", 7), 0.08)
     add(sfx, click(), Wt("cta", 0) + 0.6, 0.35)
     add(sfx, ding(1568), Wt("cta", 0) + 0.63, 0.12)
     add(sfx, whoosh(0.6, 300, 2500), T - 0.6, 0.2)

@@ -559,7 +559,7 @@ function sceneHidrogenio(ctx, t, lt) {
     ctx.restore(); ctx.globalAlpha = 1;
     hAtom(ctx, 540, 820, 150 * zoom * (1 + 0.02 * Math.sin(lt * 2)), lt, 1);
     const la = win(t, Wt('hidrogenio', 4), tPull + 0.3, 0.4, 0.4);
-    text(ctx, '1 PRÓTON  ·  1 ELÉTRON', 540, 1110, { font: `600 26px ${FONT}`, color: 'rgba(205,228,255,0.85)', align: 'center', spacing: 8, alpha: la * (1 - clamp((t - Wt('hidrogenio', 9)) / 0.3)), shadow: 10 });
+    text(ctx, '1 PRÓTON  ·  1 ELÉTRON', 540, 548, { font: `600 26px ${FONT}`, color: 'rgba(205,228,255,0.85)', align: 'center', spacing: 8, alpha: la * (1 - clamp((t - Wt('hidrogenio', 9)) / 0.3)), shadow: 10 });
   } else {
     // Big Bang: bola de fogo que esfria num mar de hidrogênio
     const age = t - tBang;
@@ -800,7 +800,7 @@ function sceneViagem(ctx, t, lt) {
     const sa = win(t, tSol + 0.1, tVoce + 0.4, 0.6, 0.6);
     glowAt(ctx, 540, 820, 420, [255, 150, 60], 0.45 * sa);
     astro(ctx, IMG.sol, 540, 820, 470 * (0.9 + 0.1 * sstep(tSol, tSol + 1, t)), { alpha: sa, rot: lt * 0.03 });
-    const ea = win(t, tTerra - 0.1, tVoce + 0.4, 0.5, 0.6), eo = lt * 0.25;
+    const ea = win(t, tTerra - 0.1, tVoce + 0.4, 0.5, 0.6), eo = (t - tTerra - 0.5) * 0.25;
     astro(ctx, IMG.terra, 540 + Math.cos(eo) * 380, 820 + Math.sin(eo) * 120, 150, { alpha: ea, rot: lt * 0.1 });
   }
   // poeira de estrelas fluindo
@@ -974,7 +974,7 @@ function frame(i, opts = {}) {
   } else {
     const out = path.join(ROOT, 'build/video.mp4');
     const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
     let i = 0; const tr = Date.now();
     const write = () => {
       while (i < N) {

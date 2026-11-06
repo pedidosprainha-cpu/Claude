@@ -11,9 +11,9 @@ GRAPH = (
     "[0:a]highpass=f=75,equalizer=f=200:t=q:w=1:g=-2,equalizer=f=3200:t=q:w=1.2:g=3,"
     "acompressor=threshold=-22dB:ratio=3:attack=4:release=70:makeup=5dB,"
     "aformat=channel_layouts=stereo,asplit=2[v][vsc];"
-    "[1:a]volume=-4dB[m0];"
+    "[1:a]volume=-6.5dB[m0];"
     "[m0][vsc]sidechaincompress=threshold=0.02:ratio=7:attack=20:release=320:makeup=1[m];"
-    "[2:a]volume=-7dB,alimiter=limit=0.7:attack=2:release=60[s];"
+    "[2:a]volume=-8dB,alimiter=limit=0.7:attack=2:release=60[s];"
     "[v][m][s]amix=inputs=3:normalize=0:duration=first[mix]"
 )
 
