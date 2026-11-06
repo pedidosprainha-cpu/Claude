@@ -1,0 +1,47 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+10%",
+  "tom": "-3Hz",
+  "falas": [
+    {
+      "id": "hook",
+      "texto": "O ferro que corre no seu sangue agora... foi fabricado dentro de estrelas que explodiram antes mesmo de a Terra existir."
+    },
+    {
+      "id": "tudo",
+      "texto": "E não é só o ferro. Noventa por cento da massa do seu corpo foi fabricada dentro de estrelas."
+    },
+    {
+      "id": "hidrogenio",
+      "texto": "O resto é hidrogênio, o átomo mais antigo do universo. Ele surgiu logo depois do Big Bang, há quase catorze bilhões de anos."
+    },
+    {
+      "id": "carbono",
+      "texto": "O carbono do seu DNA foi forjado no coração de estrelas... e espalhado pelo espaço quando elas morreram."
+    },
+    {
+      "id": "oxigenio",
+      "texto": "O oxigênio que você respira e o cálcio dos seus ossos vieram de estrelas gigantes que explodiram: as supernovas."
+    },
+    {
+      "id": "caranguejo",
+      "texto": "Uma delas foi vista daqui da Terra em mil e cinquenta e quatro. Brilhou tanto que dava pra ver de dia. Hoje, é esta nuvem."
+    },
+    {
+      "id": "ouro",
+      "texto": "E o ouro? Ele pode ter nascido da colisão de duas estrelas mortas, tão violenta que faz o próprio espaço tremer."
+    },
+    {
+      "id": "viagem",
+      "texto": "Essa poeira de estrelas viajou por bilhões de anos. Formou o Sol, a Terra... e, um dia, você."
+    },
+    {
+      "id": "fecho",
+      "texto": "Você não está só olhando pro universo. Você é o universo... olhando pra si mesmo."
+    },
+    {
+      "id": "cta",
+      "texto": "Segue pra mais curiosidades aleatórias."
+    }
+  ]
+}

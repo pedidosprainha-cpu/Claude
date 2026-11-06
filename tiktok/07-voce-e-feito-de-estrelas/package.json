@@ -1,0 +1,7 @@
+{
+  "name": "voce-e-feito-de-estrelas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ciência #5 - Você é feito de estrelas (imagens NASA/ESA/ESO)",
+  "dependencies": { "@napi-rs/canvas": "0.1.65" }
+}
