@@ -92,7 +92,7 @@ def main():
     rew = [L["nasa"]["end"] + 0.15, L["nasa"]["end"] + 0.9]
     W = lambda lid, i, k="t0": L[lid]["words"][i][k]
     marks = {  # instantes compartilhados por imagem (render.js) e som (audio.py)
-        "boom": W("hook", 9), "eht": W("destino", 12), "cross": W("cruza", 12, "t1"),
+        "boom": W("hook", 10, "t1") - 0.04, "eht": W("destino", 12), "cross": W("cruza", 12, "t1"),
         "fita": W("congela", 7), "blink": W("fim", 18), "whip": W("twist", 7),
     }
     n = int(math.ceil(total * FPS))

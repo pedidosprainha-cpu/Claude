@@ -374,7 +374,7 @@ def main():
         add(sfx, tick(1900), t, 0.045, pan=0.4); t += 0.5
     add(sfx, impact(0.5), fita + 1.4, 0.05)
     # cruzar o horizonte: um grave surdo e nada mais
-    add(sfx, sub_whump(), cross, 0.32)
+    add(sfx, sub_whump(), cross, 0.22)
     add(sfx, riser(cross - (sc["cruza"] - 0.3), 60, 400), sc["cruza"] - 0.3, 0.05)
     # lá dentro: esticar, e o piscar de olhos
     add(sfx, stretch(blink - Wt("fim", 11)), Wt("fim", 11), 0.12)
