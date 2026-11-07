@@ -1,0 +1,7 @@
+{
+  "name": "buraco-negro",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ciência #6 - O que acontece se você cair num buraco negro (simulação NASA)",
+  "dependencies": { "@napi-rs/canvas": "0.1.65" }
+}

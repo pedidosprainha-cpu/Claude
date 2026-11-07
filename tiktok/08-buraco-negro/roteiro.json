@@ -1,0 +1,21 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+10%",
+  "tom": "-3Hz",
+  "falas": [
+    {"id": "hook",    "texto": "Isso é o que você veria se caísse num buraco negro.", "velocidade": "+4%", "tom": "-5Hz"},
+    {"id": "nasa",    "texto": "Não é filme: é uma simulação da NASA.", "velocidade": "+8%"},
+    {"id": "destino", "texto": "O destino é um buraco negro como o do centro da nossa galáxia, com mais de quatro milhões de vezes a massa do Sol.", "velocidade": "+12%"},
+    {"id": "tamanho", "texto": "Só o ponto sem volta, o horizonte de eventos, tem vinte e cinco milhões de quilômetros de diâmetro.", "velocidade": "+11%"},
+    {"id": "queda",   "texto": "A queda dura umas três horas, com quase duas voltas em torno dele.", "velocidade": "+10%"},
+    {"id": "luz",     "texto": "A luz se curva tanto que você vê o disco de gás por cima e por baixo, ao mesmo tempo.", "velocidade": "+10%"},
+    {"id": "tempo",   "texto": "Mas, pra quem ficou olhando de longe, você nunca chega.", "velocidade": "+5%", "tom": "-4Hz"},
+    {"id": "congela", "texto": "Sua imagem fica mais lenta... mais vermelha... e congela na beira.", "velocidade": "+0%", "tom": "-6Hz"},
+    {"id": "cruza",   "texto": "Já pra você, nada de especial acontece. Você cruza o ponto sem volta... e nem percebe.", "velocidade": "+8%"},
+    {"id": "dentro",  "texto": "Lá dentro, o próprio espaço desaba rumo ao centro. Todo caminho leva pra lá.", "velocidade": "+6%", "tom": "-4Hz"},
+    {"id": "fim",     "texto": "A partir daí, faltam doze vírgula oito segundos. Seu corpo é esticado feito espaguete... e tudo acaba num piscar de olhos.", "velocidade": "+10%"},
+    {"id": "twist",   "texto": "Mas, se você só passasse raspando e voltasse, estaria trinta e seis minutos mais jovem que quem ficou te esperando.", "velocidade": "+12%"},
+    {"id": "fecho",   "texto": "Perto de um buraco negro, o tempo não passa igual pra todo mundo.", "velocidade": "+2%", "tom": "-5Hz"},
+    {"id": "cta",     "texto": "Segue pra mais curiosidades aleatórias.", "velocidade": "+10%"}
+  ]
+}
