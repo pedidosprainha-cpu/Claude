@@ -587,7 +587,7 @@ async function frame(i, opts = {}) {
   const argv = process.argv.slice(2), pi = argv.indexOf('--preview');
   if (argv.includes('--capa')) {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-    cover(ctx, await shot('mergulho', 47.0), { z: 1.05 });
+    cover(ctx, await shot('mergulho', 47.0), { z: 1.32, oy: -330 });
     bloom(0.45);
     const g = ctx.createLinearGradient(0, 1000, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.45, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0.97)');
     ctx.fillStyle = g; ctx.fillRect(0, 1000, W, H - 1000); ctx.drawImage(vignette, 0, 0);

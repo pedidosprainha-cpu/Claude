@@ -11,12 +11,13 @@ NOME = "video-08-buraco-negro.mp4"
 GRAPH = (
     "[0:a]highpass=f=80,deesser=i=0.45:m=0.5:f=0.55,equalizer=f=220:t=q:w=1:g=-2,equalizer=f=3300:t=q:w=1.2:g=2.5,"
     "treble=g=1.5:f=9000,acompressor=threshold=-22dB:ratio=3:attack=4:release=80:makeup=5dB,"
-    "aformat=sample_rates=48000:channel_layouts=stereo,asplit=3[v][vsc][vr];"
+    "aformat=sample_rates=48000:channel_layouts=stereo,asplit=4[v][vsc][vsc2][vr];"
     "[3:a]aformat=sample_rates=48000:channel_layouts=stereo[ir];"
     "[vr][ir]afir=dry=1:wet=1,volume=-19dB[vrev];"
     "[1:a]volume=-6dB[m0];"
     "[m0][vsc]sidechaincompress=threshold=0.02:ratio=6:attack=25:release=350:makeup=1[m];"
-    "[2:a]volume=-7dB,alimiter=limit=0.7:attack=2:release=60[s];"
+    "[2:a]volume=-7dB,alimiter=limit=0.7:attack=2:release=60[s0];"
+    "[s0][vsc2]sidechaincompress=threshold=0.03:ratio=4:attack=10:release=250:makeup=1[s];"
     "[v][vrev][m][s]amix=inputs=4:normalize=0:duration=first[mix]"
 )
 

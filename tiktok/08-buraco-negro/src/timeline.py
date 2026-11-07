@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 B = ROOT / "build"
 FPS, SR = 30, 48000
 
-GAP = {"hook": 0.25, "nasa": 1.0, "destino": 0.35, "tamanho": 0.35, "queda": 0.25, "luz": 0.45, "tempo": 0.25,
+GAP = {"hook": 0.6, "nasa": 1.0, "destino": 0.35, "tamanho": 0.35, "queda": 0.25, "luz": 0.45, "tempo": 0.25,
        "congela": 0.75, "cruza": 0.45, "dentro": 0.35, "fim": 1.15, "twist": 0.45, "fecho": 0.9, "cta": 1.0}
 FITA = ("congela", 7, 0.68)  # fala, primeira palavra afetada, velocidade final
 
