@@ -420,9 +420,11 @@ S.mergulho = {
     if (c > 0 && c < 0.5) { ctx.fillStyle = `rgba(255,255,255,${0.22 * (1 - c / 0.5)})`; ctx.fillRect(0, 0, W, H); }
     // corpo esticado (espaguetificação), puxado para o centro
     const t0 = Wt('fim', 8), st = clamp((t - t0) / (M.blink - t0));
-    if (st > 0) {
-      const sy = 1 + 5 * Math.pow(st, 1.6), sx = 1 / Math.sqrt(sy);
-      astronaut(ctx, 540, lerp(980, 1180, st), 300, { rot: 0.05, sx, sy, alpha: sstep(0, 0.12, st) * (1 - sstep(0.85, 1, st) * 0.6), streak: Math.round(6 * st) });
+    if (st > 0) { // esticado na direção do centro (para baixo), espremido dos lados, com rastro
+      const sy = 1 + 2.2 * Math.pow(st, 1.5), sx = 1 / Math.pow(sy, 0.7), h = 250;
+      ctx.save(); if (st > 0.15) ctx.filter = `blur(${(1.6 * st).toFixed(2)}px)`;
+      astronaut(ctx, 540, 860 + h * sy / 2 + 120 * st, h, { rot: 0.03, sx, sy, red: 0.25 * st, alpha: sstep(0, 0.1, st) * (1 - 0.7 * sstep(0.8, 1, st)), streak: Math.round(5 * st) });
+      ctx.restore();
     }
   },
   fg(ctx, t, lt) {
@@ -435,10 +437,13 @@ S.mergulho = {
     const c0 = Wt('fim', 3), ca = win(t, c0 - 0.1, M.blink + 0.05, 0.3, 0.1);
     if (ca > 0) {
       const p = clamp((t - Wt('fim', 7, 't1')) / (M.blink - Wt('fim', 7, 't1')));
-      ctx.save(); ctx.globalAlpha = ca; ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(540, 650, 120, 0, 6.283); ctx.stroke();
-      ctx.strokeStyle = rgba([255, 120, 90]); ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(540, 650, 120, -Math.PI / 2, -Math.PI / 2 + 6.283 * (1 - p)); ctx.stroke(); ctx.restore();
-      text(ctx, '12,8 s', 540, 672, { font: `300 66px ${MONO_L}`, color: '#fff', align: 'center', alpha: ca });
-      text(ctx, 'ATÉ O FIM', 540, 820, { font: `21px ${MONO}`, color: 'rgba(225,232,255,0.8)', align: 'center', spacing: 5, alpha: ca });
+      const cy = 600, R = 140;
+      ctx.save(); ctx.globalAlpha = ca; ctx.fillStyle = 'rgba(4,6,14,0.45)'; ctx.beginPath(); ctx.arc(540, cy, R, 0, 6.283); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(540, cy, R, 0, 6.283); ctx.stroke();
+      ctx.strokeStyle = rgba([255, 120, 90]); ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(540, cy, R, -Math.PI / 2, -Math.PI / 2 + 6.283 * (1 - p)); ctx.stroke(); ctx.restore();
+      text(ctx, '12,8', 540, cy + 14, { font: `300 76px ${MONO_L}`, color: '#fff', align: 'center', alpha: ca });
+      text(ctx, 'SEGUNDOS', 540, cy + 62, { font: `19px ${MONO}`, color: 'rgba(225,232,255,0.8)', align: 'center', spacing: 4, alpha: ca });
+      text(ctx, 'ATÉ O FIM', 540, cy + R + 44, { font: `21px ${MONO}`, color: 'rgba(225,232,255,0.8)', align: 'center', spacing: 5, alpha: ca });
     }
   },
 };
@@ -446,10 +451,10 @@ S.mergulho = {
 const eSrc = t => t < M.whip ? 49.6 + (t - M.whip) : (t < M.whip + 0.9 ? 49.6 + (t - M.whip) : 50.5 + (t - M.whip - 0.9) * 1.5);
 S.twist = {
   async bg(ctx, t, lt) {
-    const src = eSrc(t);
-    cover(ctx, await shot('escape', src), { z: 1.02 });
+    const src = eSrc(t), k = sstep(M.whip, M.whip + 0.9, t), z = lerp(1.02, 1.3, k), oy = lerp(0, -300, k);
+    cover(ctx, await shot('escape', src), { z, oy });
     if (t > M.whip - 0.05 && t < M.whip + 0.95) { // borrão de movimento no chicote
-      for (const d of [1, 2, 3]) { ctx.globalAlpha = 0.35 / d; cover(ctx, await shot('escape', src - d / 30), { z: 1.02 }); }
+      for (const d of [1, 2, 3]) { ctx.globalAlpha = 0.35 / d; cover(ctx, await shot('escape', src - d / 30), { z, oy }); }
       ctx.globalAlpha = 1;
     }
   },
@@ -464,7 +469,7 @@ S.twist = {
     }
     // fecho
     const f1 = win(t, Wt('fecho', 0) - 0.1, SCN.cta.t0 + 0.2, 0.6, 0.4);
-    poem(ctx, ['Perto de um buraco negro,', 'o tempo não passa', 'igual pra todo mundo.'], 1170, f1, 78);
+    poem(ctx, ['Perto de um buraco negro,', 'o tempo não passa', 'igual pra todo mundo.'], 560, f1, 80);
   },
 };
 S.cta = { async bg(ctx, t, lt) { ctaScene(ctx, t, lt); }, fg() {} };
