@@ -1,0 +1,41 @@
+name: Android APK
+
+on:
+  push:
+    paths:
+      - "fxengine/**"
+      - "android/**"
+      - "tests/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Chaquopy needs a build-time Python of the same version as the app (3.13).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Engine tests
+        run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FXEngine-apk
+          path: android/app/build/outputs/apk/release/app-release.apk

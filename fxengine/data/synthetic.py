@@ -73,8 +73,13 @@ class SyntheticProvider:
         return InstrumentData(inst, frames, price, price - half, price + half,
                               m5.index[-1].to_pydatetime(), "sintético", True, ["dados sintéticos (modo offline)"])
 
-    def load_instruments(self, insts, now):
-        return {i.symbol: self.load_instrument(i, now) for i in insts}, {}
+    def load_instruments(self, insts, now, progress=None):
+        out = {}
+        for k, i in enumerate(insts, 1):
+            out[i.symbol] = self.load_instrument(i, now)
+            if progress:
+                progress(k, len(insts))
+        return out, {}
 
     def load_context(self, now: datetime) -> MarketContext:
         rng = np.random.default_rng(self.s.seed + 1)

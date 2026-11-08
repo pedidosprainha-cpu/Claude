@@ -8,4 +8,7 @@ Motor de análise gráfica, quantitativa e fundamentalista de Forex (28 pares) e
 - Código em `fxengine/`, testes em `tests/` (`python3 -m pytest -q`; usam dados sintéticos,
   sem rede). Modo demonstração sem rede: `python3 -m fxengine --offline`.
 - Textos para o usuário em português; código e comentários em inglês.
+- `android/`: app Android (Kotlin + Compose + Chaquopy) que embute o motor; ele chama
+  `fxengine/app_api.py`. Mudou a saída do motor? Mantenha `app_api.result_dict` e
+  `android/.../data/Models.kt` em sincronia. Build: `cd android && ./gradlew assembleRelease`.
 - `analysis/` contém análises manuais antigas (anteriores ao motor).

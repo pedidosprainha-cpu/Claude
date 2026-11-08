@@ -3,3 +3,12 @@ __pycache__/
 .cache/
 reports/
 .pytest_cache/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+*.apk
+android/keystore.properties
+*.keystore
+*.jks

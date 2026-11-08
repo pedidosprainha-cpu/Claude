@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Three candlesticks and a rising trend line, inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- candle 1 (red) -->
+    <path android:fillColor="#F05A5A" android:pathData="M36,40h2v28h-2z" />
+    <path android:fillColor="#F05A5A" android:pathData="M32,46h10v16h-10z" />
+    <!-- candle 2 (green) -->
+    <path android:fillColor="#22C55E" android:pathData="M53,30h2v34h-2z" />
+    <path android:fillColor="#22C55E" android:pathData="M49,36h10v22h-10z" />
+    <!-- candle 3 (green, higher) -->
+    <path android:fillColor="#22C55E" android:pathData="M70,26h2v26h-2z" />
+    <path android:fillColor="#22C55E" android:pathData="M66,30h10v16h-10z" />
+    <!-- trend line -->
+    <path
+        android:strokeColor="#FBBF24"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M28,76 L46,66 L60,70 L80,52" />
+    <path android:fillColor="#FBBF24" android:pathData="M80,52 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+</vector>

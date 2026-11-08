@@ -151,7 +151,8 @@ class Provider:
             notes.append(f"cotação com {age / 60:.0f} min de atraso")
         return InstrumentData(inst, frames, price, bid, ask, qts, src, tradeable, notes)
 
-    def load_instruments(self, insts: list[Instrument], now: datetime) -> tuple[dict, dict]:
+    def load_instruments(self, insts: list[Instrument], now: datetime, progress=None) -> tuple[dict, dict]:
+        """progress(done, total) is called from this thread after each instrument."""
         out, errors = {}, {}
 
         def job(i):
@@ -161,11 +162,13 @@ class Provider:
                 return i.symbol, None, str(e)
 
         with ThreadPoolExecutor(max_workers=self.s.workers) as ex:
-            for sym, data, err in ex.map(job, insts):
+            for k, (sym, data, err) in enumerate(ex.map(job, insts), 1):
                 if data is not None:
                     out[sym] = data
                 else:
                     errors[sym] = err
+                if progress:
+                    progress(k, len(insts))
         return out, errors
 
     # ------------------------------------------------------------------ context

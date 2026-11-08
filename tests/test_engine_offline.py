@@ -56,3 +56,33 @@ def test_cli_offline(capsys):
     assert main(["--offline", "--sem-edge", "-a", "fx", "--top", "3"]) == 0
     out = capsys.readouterr().out
     assert "FXENGINE" in out
+
+
+def test_app_api_contract():
+    from fxengine import app_api
+
+    calls = []
+
+    class Listener:
+        def onProgress(self, pct, msg):  # noqa: N802 - mirrors the Java interface
+            calls.append((pct, msg))
+
+    raw = app_api.run("/tmp/fxengine-test-cache", 5000, 0.5, "all", use_edge=False,
+                      listener=Listener(), offline=True)
+    d = json.loads(raw)
+    assert d["ok"] is True
+    assert calls[0][0] == 1 and calls[-1] == (100, "Concluído")
+    assert all(isinstance(p, int) for p, _ in calls)
+    assert d["decision"]["headline"]
+    o = d["ranking"][0]
+    for key in ("symbol", "side", "grade", "entry", "sl", "tp1", "tp2", "lots", "order_text", "reasons"):
+        assert key in o
+    assert d["settings"]["risk_pct"] == 0.5
+    assert len(d["strength"]) == 8
+
+
+def test_app_api_reports_errors_as_json():
+    from fxengine import app_api
+
+    d = json.loads(app_api.run("/tmp/fxengine-test-cache", assets="NOPE", offline=True))
+    assert d["ok"] is False and "NOPE" in d["error"]

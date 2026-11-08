@@ -245,14 +245,24 @@ class Engine:
     def now(self) -> datetime:
         return getattr(self.provider, "now", None) or datetime.now(timezone.utc)
 
-    def scan(self, spec: str | None = None) -> ScanResult:
+    def scan(self, spec: str | None = None, progress=None) -> ScanResult:
+        """progress(pct: float, message: str) is optional (used by the Android app)."""
+        def step(pct: float, msg: str) -> None:
+            if progress:
+                progress(min(max(pct, 0.0), 100.0), msg)
+
         now = self.now()
         targets = select(spec)
         need = {i.symbol: i for i in targets}
         for i in FX_PAIRS:                      # strength meter always needs the full FX matrix
             need.setdefault(i.symbol, i)
-        data, errors = self.provider.load_instruments(list(need.values()), now)
+        step(2, "Conectando às fontes de dados")
+        data, errors = self.provider.load_instruments(
+            list(need.values()), now,
+            progress=lambda k, n: step(3 + 52 * k / n, f"Preços ao vivo e gráficos {k}/{n}"))
+        step(56, "Juros, COT, agenda e manchetes")
         ctx = self.provider.load_context(now)
+        step(64, "Força relativa das moedas")
 
         fx_h1 = {s: d.frames["H1"] for s, d in data.items() if not d.inst.is_metal}
         met_h1 = {d.inst.base: d.frames["H1"] for s, d in data.items() if d.inst.is_metal}
@@ -262,9 +272,10 @@ class Engine:
         prices = {s: d.price for s, d in data.items()}
 
         opps = []
-        for inst in targets:
+        for k, inst in enumerate(targets):
             if inst.symbol not in data:
                 continue
+            step(66 + 32 * k / max(len(targets), 1), f"Analisando {inst.symbol}")
             try:
                 o = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices)
             except Exception as e:  # noqa: BLE001 - isolate per-instrument failures
@@ -275,4 +286,5 @@ class Engine:
         opps.sort(key=lambda o: o.score, reverse=True)
         best = next((o for o in opps if o.executable), None)
         corr = _correlations(best or opps[0], opps, data) if opps else {}
+        step(100, "Concluído")
         return ScanResult(now, sess, opps, best, strength, fmodel.macro, ctx, errors, self.s, corr)

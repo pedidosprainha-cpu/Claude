@@ -26,6 +26,12 @@ python3 -m fxengine --offline               # demonstração com dados sintétic
 No **Claude Code**, digite `/analisar` (ou "analise agora"): a skill roda o motor, revisa
 manchetes e agenda e devolve a decisão final em português.
 
+### App Android
+
+O mesmo motor roda dentro de um app Android (Python embutido no APK, sem servidor):
+um botão **ANALISAR**, a decisão em destaque, ranking, painel de mercado e ajustes de
+saldo e risco. Instalação, uso e build em [`android/README.md`](android/README.md).
+
 ## O que sai
 
 - **Melhor oportunidade**: lado, entrada (ask para compra, bid para venda), stop, TP1
