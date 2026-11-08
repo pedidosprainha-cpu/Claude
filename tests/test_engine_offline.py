@@ -1,0 +1,58 @@
+import json
+
+import pytest
+
+from fxengine import Engine, Settings
+from fxengine.cli import main
+from fxengine.report import render_text, to_json
+
+
+@pytest.fixture(scope="module")
+def result():
+    return Engine(Settings(offline=True, seed=7)).scan()
+
+
+def test_scan_ranks_and_plans(result):
+    assert len(result.opportunities) == 32
+    scores = [o.score for o in result.opportunities]
+    assert scores == sorted(scores, reverse=True)
+    for o in result.opportunities:
+        p = o.plan
+        assert 0 <= o.score <= 100
+        assert o.grade in ("A+", "A", "B", "C", "D")
+        if o.direction == 1:
+            assert p.sl < p.entry < p.tp1 <= p.tp2
+            assert p.entry == o.ask
+        else:
+            assert p.tp2 <= p.tp1 < p.entry < p.sl
+            assert p.entry == o.bid
+        assert p.rr1 >= 1.0 - 1e-9
+
+
+def test_best_is_executable_and_gates_respected(result):
+    if result.best is not None:
+        assert result.best.executable and not result.best.gates
+        assert result.best.score >= result.settings.min_score
+    # synthetic NZD event 25 min ahead must block every NZD instrument
+    for o in result.opportunities:
+        if "NZD" in o.symbol:
+            assert not o.executable
+            assert any("evento" in g for g in o.gates)
+
+
+def test_planted_strength_detected(result):
+    ranking = [c for c, _ in result.strength.ranking]
+    assert ranking[0] == "AUD" and ranking[-1] == "JPY"
+
+
+def test_reports_render(result):
+    txt = render_text(result, detail=True)
+    assert "RANKING" in txt and "FORÇA RELATIVA" in txt
+    d = json.loads(to_json(result))
+    assert d["ranking"] and "plan" in d["ranking"][0]
+
+
+def test_cli_offline(capsys):
+    assert main(["--offline", "--sem-edge", "-a", "fx", "--top", "3"]) == 0
+    out = capsys.readouterr().out
+    assert "FXENGINE" in out

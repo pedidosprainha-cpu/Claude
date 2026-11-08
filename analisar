@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Atalho: ./analisar [opções]  — varre Forex + metais e aponta a melhor entrada a mercado agora.
+# Exemplos:  ./analisar            ./analisar -a metais        ./analisar -a EURUSD,XAUUSD --detalhe
+#            ./analisar --saldo 25000 --risco 0.5 --salvar
+cd "$(dirname "$0")" && exec python3 -m fxengine scan "$@"
