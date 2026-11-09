@@ -16,38 +16,58 @@ class LambdaProgressListener(private val cb: (Int, String) -> Unit) : ProgressLi
     override fun onProgress(pct: Int, msg: String) = cb(pct, msg)
 }
 
-/**
- * Runs the embedded Python engine (fxengine/app_api.py). Blocking: call it off the main thread.
- */
-class EngineRunner(private val context: Context) {
-
-    // Python.start() must run exactly once even if warm-up and the first tap race.
+/** Process-wide Python runtime: started exactly once, whoever asks first (UI or monitor service). */
+object PythonHost {
     @Synchronized
-    private fun python(): Python {
+    fun get(context: Context): Python {
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(context.applicationContext))
         }
         return Python.getInstance()
     }
+}
+
+/**
+ * Runs the embedded Python engine (fxengine/app_api.py). Blocking: call it off the main thread.
+ */
+class EngineRunner(context: Context) {
+    private val app = context.applicationContext
+
+    private fun api() = PythonHost.get(app).getModule("fxengine.app_api")
+
+    private fun cacheDir(): String = File(app.cacheDir, "fxengine").apply { mkdirs() }.absolutePath
 
     /** Extracts the runtime and imports numpy/pandas/engine so the first scan starts faster. */
     fun warmUp() {
-        python().getModule("fxengine.app_api")
+        api()
     }
 
-    fun run(settings: AppSettings, onProgress: (Int, String) -> Unit): String {
-        val cache = File(context.cacheDir, "fxengine").apply { mkdirs() }
-        val api = python().getModule("fxengine.app_api")
-        return api.callAttr(
+    fun run(settings: AppSettings, onProgress: (Int, String) -> Unit): String =
+        api().callAttr(
             "run",
-            cache.absolutePath,
+            cacheDir(),
             settings.balance,
             settings.riskPct,
             settings.assets,
             settings.useEdge,
             settings.useNews,
-            "America/Sao_Paulo",
+            TZ,
             LambdaProgressListener(onProgress),
         ).toString()
+
+    /** Light real-time breakout scan (fxengine/breakouts.py). */
+    fun scanBreakouts(settings: AppSettings, onProgress: (Int, String) -> Unit): String =
+        api().callAttr(
+            "scan_breakouts",
+            cacheDir(),
+            settings.balance,
+            settings.riskPct,
+            settings.assets,
+            TZ,
+            LambdaProgressListener(onProgress),
+        ).toString()
+
+    companion object {
+        const val TZ = "America/Sao_Paulo"
     }
 }

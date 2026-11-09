@@ -16,16 +16,11 @@ from .analysis.fundamental import FundamentalModel, FundamentalResult, Macro
 from .analysis.quant import QuantResult
 from .analysis.structure import LevelMap, level_map
 from .analysis.technical import TechnicalResult
-from .config import Settings
+from .config import Settings, grade
 from .data.provider import InstrumentData, MarketContext
 from .instruments import FX_PAIRS, Instrument, select
 from .risk import TradePlan, build_plan
 
-GRADES = ((65, "A+"), (55, "A"), (45, "B"), (35, "C"), (0, "D"))
-
-
-def grade(score: float) -> str:
-    return next(g for t, g in GRADES if score >= t)
 
 
 @dataclass

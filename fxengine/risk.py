@@ -49,6 +49,22 @@ def conversion_to_usd(ccy: str, prices: dict[str, float]) -> float | None:
     return None
 
 
+def position_size(inst: Instrument, sl_dist: float, balance: float, risk_pct: float,
+                  prices: dict[str, float], account_ccy: str = "USD") -> tuple[float, float, float]:
+    """(lots rounded down to 0.01, risk amount, value of 1 pip per lot) in the account currency."""
+    risk_amount = balance * risk_pct / 100
+    pip_quote = inst.pip * inst.contract_size            # quote-ccy value of 1 pip per lot
+    conv = conversion_to_usd(inst.quote, prices)
+    if account_ccy != "USD":
+        acc = conversion_to_usd(account_ccy, prices)
+        conv = conv / acc if conv and acc else None
+    pip_val = pip_quote * conv if conv else float("nan")
+    sl_pips = inst.pips(sl_dist)
+    ok = pip_val == pip_val and pip_val > 0 and sl_pips > 0
+    lots = math.floor(risk_amount / (sl_pips * pip_val) * 100) / 100 if ok else 0.0
+    return lots, risk_amount, pip_val
+
+
 def build_plan(inst: Instrument, direction: int, bid: float, ask: float, frames: dict[str, pd.DataFrame],
                atr_m15: float, atr_h1: float, atr_d1: float, levels: LevelMap,
                balance: float, risk_pct: float, prices: dict[str, float], account_ccy: str = "USD") -> TradePlan:
@@ -122,15 +138,8 @@ def build_plan(inst: Instrument, direction: int, bid: float, ask: float, frames:
     tp2 = entry + d * tp2_dist
 
     # ---------------------------------------------------------------- sizing
-    risk_amount = balance * risk_pct / 100
-    pip_quote = inst.pip * inst.contract_size            # quote-ccy value of 1 pip per lot
-    conv = conversion_to_usd(inst.quote, prices)
-    if account_ccy != "USD":
-        acc = conversion_to_usd(account_ccy, prices)
-        conv = conv / acc if conv and acc else None
-    pip_val = pip_quote * conv if conv else float("nan")
+    lots, risk_amount, pip_val = position_size(inst, sl_dist, balance, risk_pct, prices, account_ccy)
     sl_pips = inst.pips(sl_dist)
-    lots = math.floor(risk_amount / (sl_pips * pip_val) * 100) / 100 if pip_val and pip_val == pip_val and sl_pips > 0 else 0.0
     if lots < 0.01:
         notes.append("tamanho calculado < 0.01 lote para o risco escolhido")
 

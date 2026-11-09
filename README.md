@@ -23,6 +23,14 @@ pip install -r requirements.txt
 python3 -m fxengine --offline               # demonstração com dados sintéticos (sem rede)
 ```
 
+Rompimentos (breakouts) em tempo real:
+
+```bash
+python3 -m fxengine rompimentos                     # varredura única (nota ≥ B)
+python3 -m fxengine rompimentos --monitorar 120     # repete a cada 2 min e avisa os novos
+python3 -m fxengine rompimentos -a metais --min-nota A
+```
+
 No **Claude Code**, digite `/analisar` (ou "analise agora"): a skill roda o motor, revisa
 manchetes e agenda e devolve a decisão final em português.
 
@@ -55,6 +63,8 @@ fxengine/
   risk.py        plano do trade e tamanho de posição
   engine.py      orquestração, multiplicadores, filtros e ranking
   report.py      relatório no terminal / Markdown / JSON
+  breakouts.py   detector de rompimentos em tempo real + rastreador de eventos novos
+  app_api.py     interface JSON usada pelo app Android
 ```
 
 ### Camadas
@@ -100,6 +110,32 @@ Notas: A+ ≥ 65 · A ≥ 55 · B ≥ 45 · C ≥ 35 · D < 35. Só é recomenda
 - **Lote**: `saldo × risco% ÷ (pips de stop × valor do pip por lote)`, com conversão
   para USD pelos preços ao vivo. Contratos: FX 100.000, XAU 100 oz, XAG 5.000 oz,
   XPT/XPD 100 oz (ajuste em `instruments.py` se sua corretora usar outro tamanho).
+
+### Rompimentos em tempo real
+
+Para cada ativo, em M15 e H1, o detector monta os níveis relevantes: máxima/mínima de
+12h (M15), 24h e 5 dias (H1), caixas de consolidação apertada (altura pequena em ATR),
+range asiático e as zonas de S/R do motor (dia/semana anteriores, swings, pivôs, números
+redondos). Em cada nível, classifica o que o preço está fazendo agora:
+
+- **rompendo**: preço ao vivo além do nível, candle ainda aberto;
+- **confirmado**: um candle fechou além do nível;
+- **reteste**: depois de romper, voltou ao nível e segurou;
+- **falso**: rompeu e fechou de volta para dentro, uma armadilha operada na direção contrária.
+
+A nota (0–100) soma vários fatores:
+
+- importância do nível e confluência de referências;
+- compressão de volatilidade antes do rompimento;
+- força do candle de rompimento;
+- tendência do timeframe acima e força relativa das moedas;
+- distância já percorrida (rompimentos esticados são penalizados);
+- eventos de alto impacto, liquidez da sessão e spread em relação ao stop;
+- taxa histórica de continuação de rompimentos naquele ativo e timeframe.
+
+O plano tem stop do outro lado do nível, alvos na próxima zona e na projeção da altura do
+range, e lote pelo risco escolhido. Um rastreador em disco lembra os eventos já vistos, para
+que o monitor só avise o que é novo.
 
 ### Edge histórico (anti-overfitting)
 

@@ -1,0 +1,569 @@
+"""Real-time breakout recognition.
+
+For every instrument and timeframe (M15 and H1) the detector builds the levels
+that matter for a breakout:
+
+  * N-bar ranges (12 h on M15; 24 h and 5 days on H1)
+  * tight consolidation boxes (range height small versus ATR)
+  * the Asian-session range (M15, from 07:00 UTC)
+  * the engine's S/R zones: prior day/week extremes, H1/H4/D1 swings, pivots,
+    round numbers
+
+and classifies what price is doing at each level *now*:
+
+  rompendo    live price beyond the level, the bar has not closed yet
+  confirmado  a recently closed bar finished beyond the level
+  reteste     after the break price came back to the level and is holding
+  falso       broke and closed back inside: a trap, traded the other way
+
+Each event gets a 0-100 quality score (level significance, pre-break
+compression, breakout-candle strength, higher-timeframe trend, currency
+strength, extension, event risk, liquidity, spread and the instrument's own
+historical follow-through) and a market-execution plan. A small on-disk
+tracker remembers what was already seen, so a monitor loop can alert only on
+new events.
+"""
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+
+from . import sessions
+from .analysis import indicators as ta
+from .analysis import strength as strength_mod
+from .analysis.structure import level_map
+from .analysis.technical import analyze_tf
+from .config import Settings, grade
+from .data.provider import LIGHT, InstrumentData
+from .instruments import FX_PAIRS, Instrument, select
+from .risk import position_size
+
+TF_SPEC = {
+    "M15": {"period": pd.Timedelta(minutes=15), "recent": 6, "pre": 24, "ranges": (48,),
+            "htf": "H1", "horizon": 16},
+    "H1": {"period": pd.Timedelta(hours=1), "recent": 4, "pre": 24, "ranges": (24, 120),
+           "htf": "H4", "horizon": 12},
+}
+RANGE_NAME = {48: "12h", 24: "24h", 120: "5 dias"}
+KIND_RANK = {"box": 3, "session": 2, "range": 1, "zone": 0}
+STATUS_LABEL = {"rompendo": "ROMPENDO AGORA", "confirmado": "CONFIRMADO", "reteste": "RETESTE",
+                "falso": "FALSO ROMPIMENTO"}
+
+
+@dataclass
+class Level:
+    price: float
+    labels: list[str]
+    kind: str              # range | box | session | zone
+    strength: float        # 0..10
+    height: float | None = None
+    direction: int = 0     # +1 resistance (break up), -1 support (break down), 0 either
+
+    @property
+    def label(self) -> str:
+        return ", ".join(dict.fromkeys(self.labels))
+
+
+@dataclass
+class BreakoutPlan:
+    entry: float
+    sl: float
+    tp1: float
+    tp2: float
+    sl_pips: float
+    tp1_pips: float
+    tp2_pips: float
+    rr1: float
+    rr2: float
+    lots: float
+    risk_amount: float
+    sl_basis: str
+    tp1_basis: str
+    tp2_basis: str
+
+
+@dataclass
+class Breakout:
+    inst: Instrument
+    tf: str
+    direction: int          # trade direction: +1 buy, -1 sell
+    break_dir: int          # direction price crossed the level (opposite of trade for 'falso')
+    status: str             # rompendo | confirmado | reteste | falso
+    extended: bool
+    level: Level
+    price: float
+    bid: float
+    ask: float
+    atr: float
+    ext_atr: float          # distance beyond the level, in ATRs, along break_dir
+    bars_since: int         # closed bars since the break bar (0 = on the forming bar)
+    broke_at: pd.Timestamp
+    quality: float = 0.0
+    grade: str = "D"
+    pros: list[str] = field(default_factory=list)
+    cons: list[str] = field(default_factory=list)
+    plan: BreakoutPlan | None = None
+    hist_n: int = 0
+    hist_wins: int = 0
+    first_seen: datetime | None = None
+    is_new: bool = False
+    actionable: bool = False     # worth acting on now (quality, spread, events, extension)
+
+    @property
+    def symbol(self) -> str:
+        return self.inst.symbol
+
+    @property
+    def side(self) -> str:
+        return "COMPRA" if self.direction == 1 else "VENDA"
+
+    @property
+    def hist_p(self) -> float:
+        """Follow-through rate with a Beta(5,5) prior (shrinks small samples toward 50%)."""
+        return (self.hist_wins + 5) / (self.hist_n + 10)
+
+    def headline(self) -> str:
+        i = self.inst
+        if self.status == "falso":
+            what = "acima" if self.break_dir == 1 else "abaixo"
+            return (f"{self.symbol}: falso rompimento {what} de {i.fmt(self.level.price)} "
+                    f"({self.level.label}, {self.tf})")
+        verb = "rompendo" if self.status == "rompendo" else "rompeu"
+        side = "para cima" if self.break_dir == 1 else "para baixo"
+        return f"{self.symbol} {verb} {side} {i.fmt(self.level.price)} ({self.level.label}, {self.tf})"
+
+
+# ---------------------------------------------------------------------------- helpers
+
+def split_forming(df: pd.DataFrame, now: datetime, period: pd.Timedelta):
+    """(closed bars, forming bar or None)."""
+    if df.index[-1] + period > pd.Timestamp(now):
+        return df.iloc[:-1], df.iloc[-1]
+    return df, None
+
+
+def follow_through(closed: pd.DataFrame, n: int, d: int, horizon: int) -> tuple[int, int]:
+    """Past closes beyond the n-bar extreme: how often did price go +1 ATR before -1 ATR?"""
+    if len(closed) < n + 40:
+        return 0, 0
+    c, h, l = closed.c.to_numpy(), closed.h.to_numpy(), closed.l.to_numpy()
+    a = ta.atr(closed).to_numpy()
+    ext = (closed.h if d == 1 else closed.l).rolling(n)
+    lvl = (ext.max() if d == 1 else ext.min()).shift(1).to_numpy()
+    beyond = d * (c - lvl) > 0
+    prev = np.concatenate([[True], beyond[:-1]])
+    idx = np.flatnonzero(beyond & ~prev)
+    idx = idx[(idx > n + 15) & (idx < len(c) - horizon - 1)]
+    total = wins = 0
+    last_exit = -1
+    for i in idx:
+        if i <= last_exit or not np.isfinite(a[i]) or a[i] <= 0:
+            continue
+        entry = c[i]
+        tgt, stp = entry + d * a[i], entry - d * a[i]
+        outcome, k = None, i
+        for k in range(i + 1, i + 1 + horizon):
+            if (l[k] <= stp) if d == 1 else (h[k] >= stp):
+                outcome = 0
+                break
+            if (h[k] >= tgt) if d == 1 else (l[k] <= tgt):
+                outcome = 1
+                break
+        if outcome is None:
+            outcome = int(d * (c[k] - entry) > 0)
+        wins += outcome
+        total += 1
+        last_exit = k
+    return total, wins
+
+
+def _merge(levels: list[Level], tol: float) -> list[Level]:
+    out: list[Level] = []
+    for lv in sorted(levels, key=lambda x: x.price):
+        m = next((o for o in out if abs(o.price - lv.price) <= tol
+                  and (o.direction == lv.direction or 0 in (o.direction, lv.direction))), None)
+        if m is None:
+            out.append(Level(lv.price, list(lv.labels), lv.kind, lv.strength, lv.height, lv.direction))
+            continue
+        m.labels += lv.labels
+        if KIND_RANK[lv.kind] > KIND_RANK[m.kind]:
+            m.kind, m.price = lv.kind, lv.price
+        m.strength = min(10.0, max(m.strength, lv.strength) + 1.5)
+        m.height = max(filter(None, (m.height, lv.height)), default=None)
+        m.direction = m.direction or lv.direction
+    return out
+
+
+def candidate_levels(tf: str, closed: pd.DataFrame, zones, price: float, a: float,
+                     now: datetime) -> list[Level]:
+    sp = TF_SPEC[tf]
+    R, n = sp["recent"], len(closed)
+    out: list[Level] = []
+    for N in sp["ranges"]:
+        if n < R + N + 5:
+            continue
+        ref = closed.iloc[-(R + N):-R]
+        hi, lo = float(ref.h.max()), float(ref.l.min())
+        name = RANGE_NAME.get(N, f"{N} barras")
+        out.append(Level(hi, [f"máxima de {name}"], "range", 5.0, hi - lo, 1))
+        out.append(Level(lo, [f"mínima de {name}"], "range", 5.0, hi - lo, -1))
+    for B, k in ((32, 4.2), (24, 3.6), (16, 3.0)):
+        if n < R + B + 5:
+            continue
+        box = closed.iloc[-(R + B):-R]
+        hi, lo = float(box.h.max()), float(box.l.min())
+        if hi - lo <= k * a:
+            out.append(Level(hi, [f"topo da consolidação de {B} barras"], "box", 6.5, hi - lo, 1))
+            out.append(Level(lo, [f"fundo da consolidação de {B} barras"], "box", 6.5, hi - lo, -1))
+            break
+    t = pd.Timestamp(now)
+    if tf == "M15" and t.hour >= 7:
+        day0 = t.normalize()
+        asia = closed[(closed.index >= day0) & (closed.index < day0 + pd.Timedelta(hours=7))]
+        if len(asia) >= 16:
+            hi, lo = float(asia.h.max()), float(asia.l.min())
+            out.append(Level(hi, ["máxima do range asiático"], "session", 6.0, hi - lo, 1))
+            out.append(Level(lo, ["mínima do range asiático"], "session", 6.0, hi - lo, -1))
+    for z in (zones.levels if zones is not None else []):
+        if abs(z.price - price) <= 3 * a and z.strength >= 3.0:
+            out.append(Level(z.price, [z.label()], "zone", float(z.strength), None, 0))
+    return _merge(out, 0.3 * a)
+
+
+def classify(level: Level, closed: pd.DataFrame, forming, price: float, a: float, R: int, pre: int):
+    """Return (status, break_dir, break_index, extreme_after) or None."""
+    c, h, l = closed.c.to_numpy(), closed.h.to_numpy(), closed.l.to_numpy()
+    n = len(c)
+    if n < R + pre + 2:
+        return None
+    L, tol = level.price, 0.05 * a
+    dirs = [level.direction] if level.direction else [1, -1]
+    for d in dirs:
+        before = c[n - R - pre:n - R]
+        # the level must have held before the recent window
+        if np.mean(d * (before - L) <= tol) < (1.0 if level.direction else 0.75):
+            continue
+        if d * (c[n - R - 1] - L) > tol:
+            continue
+        j = next((k for k in range(n - R, n) if d * (c[k] - L) > tol), None)
+        f_hi = float(forming.h) if forming is not None else -np.inf
+        f_lo = float(forming.l) if forming is not None else np.inf
+        if j is None:
+            if forming is not None and d * (price - L) > tol:
+                return "rompendo", d, n, (f_hi if d == 1 else f_lo)
+            continue
+        extreme = max(float(h[j:].max()), f_hi) if d == 1 else min(float(l[j:].min()), f_lo)
+        closed_back = any(d * (x - L) < -tol for x in c[j + 1:])
+        inside_now = d * (price - L) < -tol
+        if (closed_back and inside_now) or d * (price - L) < -0.3 * a:
+            return "falso", d, j, extreme
+        lows = l[j + 1:] if d == 1 else h[j + 1:]
+        probe = list(lows) + ([f_lo if d == 1 else f_hi] if forming is not None else [])
+        touched = any(d * (x - L) <= 0.3 * a for x in probe)
+        return ("reteste" if touched else "confirmado"), d, j, extreme
+    return None
+
+
+# ---------------------------------------------------------------------------- detection
+
+def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, float],
+           strength: strength_mod.StrengthResult | None, events: list, sess) -> list[Breakout]:
+    inst, frames = data.inst, data.frames
+    out: list[Breakout] = []
+    h1 = frames.get("H1")
+    zones = None
+    if h1 is not None and len(h1) > 30:
+        zones = level_map(frames, data.price, inst.round_step, float(ta.atr(h1).iloc[-1]))
+    for tf, sp in TF_SPEC.items():
+        df = frames.get(tf)
+        if df is None or len(df) < 80:
+            continue
+        closed, forming = split_forming(df, now, sp["period"])
+        a = float(ta.atr(closed).iloc[-1])
+        if not np.isfinite(a) or a <= 0:
+            continue
+        htf = analyze_tf(sp["htf"], frames.get(sp["htf"]))
+        bb_l, bb_m, bb_u = ta.bollinger(closed.c)
+        bbw = ((bb_u - bb_l) / bb_m).iloc[-200:]
+        for lv in candidate_levels(tf, closed, zones, data.price, a, now):
+            res = classify(lv, closed, forming, data.price, a, sp["recent"], sp["pre"])
+            if res is None:
+                continue
+            status, bd, j, extreme = res
+            td = -bd if status == "falso" else bd
+            ext = bd * (data.price - lv.price) / a
+            run = td * (data.price - lv.price) / a          # how far price already went for the trade
+            idx = closed.index[j] if j < len(closed) else df.index[-1]
+            b = Breakout(inst, tf, td, bd, status, run > 2.2, lv, data.price,
+                         data.bid, data.ask, a, ext, max(len(closed) - 1 - j, 0) if j < len(closed) else 0, idx)
+            _score(b, closed, forming, j, bbw, htf, strength, events, sess, now)
+            atr_h1 = float(ta.atr(h1).iloc[-1]) if h1 is not None and len(h1) > 30 else a
+            b.plan = _plan(b, extreme, zones, s, prices, atr_h1)
+            spread_ratio = (data.ask - data.bid) / (b.plan.sl_pips * inst.pip) if b.plan.sl_pips > 0 else 1.0
+            if spread_ratio > 0.3:
+                b.quality -= 20
+                b.cons.append(f"spread consome {spread_ratio * 100:.0f}% do stop — evitar")
+            elif spread_ratio > 0.2:
+                b.quality -= 10
+                b.cons.append(f"spread alto ({spread_ratio * 100:.0f}% do stop)")
+            if status != "falso":
+                b.hist_n, b.hist_wins = follow_through(closed, sp["ranges"][0], bd, sp["horizon"])
+                if b.hist_n >= 8:
+                    if b.hist_p >= 0.55:
+                        b.quality += 4
+                        b.pros.append(f"rompimentos neste ativo/TF costumam seguir ({b.hist_wins}/{b.hist_n})")
+                    elif b.hist_p <= 0.42:
+                        b.quality -= 5
+                        b.cons.append(f"rompimentos neste ativo/TF costumam falhar ({b.hist_wins}/{b.hist_n} seguiram)")
+            b.quality = float(np.clip(b.quality, 0, 100))
+            b.grade = grade(b.quality)
+            event_block = any(c.startswith("evento de alto impacto") for c in b.cons)
+            b.actionable = (b.quality >= s.min_score and not b.extended and spread_ratio <= 0.3
+                            and not event_block)
+            out.append(b)
+    # one event per level across timeframes: keep the best-scored one
+    kept: list[Breakout] = []
+    for b in sorted(out, key=lambda x: x.quality, reverse=True):
+        if not any(k.direction == b.direction and (k.status == "falso") == (b.status == "falso")
+                   and abs(k.level.price - b.level.price) <= 0.5 * max(k.atr, b.atr) for k in kept):
+            kept.append(b)
+    return kept
+
+
+def _score(b: Breakout, closed, forming, j, bbw, htf, strength, events, sess, now) -> None:
+    q, pros, cons = 35.0, b.pros, b.cons
+    lv, a, td = b.level, b.atr, b.direction
+    q += min(lv.strength, 10.0)
+    if lv.kind == "box":
+        q += 5
+        pros.append("saída de consolidação apertada (energia acumulada)")
+    elif lv.kind == "session":
+        q += 4
+        pros.append("rompimento do range asiático")
+    if any(("dia anterior" in x) or ("semana anterior" in x) for x in lv.labels):
+        q += 4
+        pros.append("nível de referência diário/semanal")
+    if len(set(lv.labels)) >= 2:
+        q += 3
+        pros.append(f"confluência de {len(set(lv.labels))} referências no mesmo nível")
+
+    k = min(max(j - 1, 0), len(closed) - 1)
+    pos = len(closed) - 1 - k
+    if len(bbw) > 30 and pos < len(bbw):
+        pct = float(bbw.rank(pct=True).iloc[-1 - pos]) * 100
+        if pct < 25:
+            q += 6
+            pros.append(f"volatilidade comprimida antes do rompimento (percentil {pct:.0f})")
+
+    if b.status == "falso":
+        q += 2
+        pros.append("preço voltou para dentro do nível: armadilha para quem entrou no rompimento")
+    elif b.status == "rompendo":
+        if forming is not None and td * (b.price - float(forming.o)) >= 0.6 * a:
+            q += 4
+            pros.append("candle atual empurrando forte além do nível")
+        cons.append("candle ainda não fechou além do nível")
+    else:
+        bar = closed.iloc[j]
+        rng, body = float(bar.h - bar.l), abs(float(bar.c - bar.o))
+        if rng > 0 and body / rng >= 0.6 and rng >= 1.1 * a:
+            q += 6
+            pros.append("candle de rompimento forte (corpo grande, range acima do ATR)")
+        elif rng > 0 and body / rng < 0.35:
+            q -= 5
+            cons.append("candle de rompimento fraco (muito pavio)")
+        if b.status == "reteste":
+            q += 6
+            pros.append("reteste do nível segurou: rompimento validado")
+        else:
+            q += 3
+            pros.append(f"fechamento confirmado além do nível há {b.bars_since} barra(s)")
+
+    if htf is not None:
+        t = htf.trend * td
+        if t > 0.3:
+            q += 8
+            pros.append(f"a favor da tendência {htf.tf}")
+        elif t < -0.3:
+            q -= 10
+            cons.append(f"contra a tendência {htf.tf}")
+
+    if strength is not None and not b.inst.is_metal:
+        ps = strength.pair_score(b.inst.base, b.inst.quote) * td
+        if ps >= 30:
+            q += 4
+            pros.append("força relativa das moedas a favor")
+        elif ps <= -30:
+            q -= 5
+            cons.append("força relativa das moedas contra")
+
+    if b.extended:
+        q -= 15
+        cons.append(f"esticado: preço já andou {abs(b.ext_atr):.1f} ATR desde o nível — melhor esperar reteste")
+    elif b.status != "falso" and b.ext_atr > 1.5:
+        q -= 5
+        cons.append(f"já {b.ext_atr:.1f} ATR além do nível")
+
+    ccys = {b.inst.base, b.inst.quote} if not b.inst.is_metal else {"USD", b.inst.base}
+    for e in events or []:
+        if e.impact != "High" or not (e.ccy in ccys or e.ccy == "ALL"):
+            continue
+        mins = (e.time - now).total_seconds() / 60
+        if -15 <= mins <= 45:
+            q -= 20
+            cons.append(f"evento de alto impacto: {e.ccy} {e.title} {'em' if mins >= 0 else 'há'} {abs(mins):.0f} min")
+        elif 45 < mins <= 120:
+            q -= 5
+            cons.append(f"{e.ccy} {e.title} em {mins / 60:.1f}h")
+
+    liq, note = sessions.liquidity_factor(sess, b.inst.base, b.inst.quote, b.inst.is_metal)
+    if 0 < liq < 0.8:
+        q -= 6
+        cons.append(f"liquidez baixa: {note}")
+    b.quality = q
+
+
+def _plan(b: Breakout, extreme: float, zones, s: Settings, prices: dict, atr_h1: float) -> BreakoutPlan:
+    inst, a, td, L = b.inst, b.atr, b.direction, b.level.price
+    entry = b.ask if td == 1 else b.bid
+    spread = max(b.ask - b.bid, 0.0)
+    if b.status == "falso":
+        sl = extreme + b.break_dir * (0.25 * a + spread)
+        sl_basis = f"além do extremo do falso rompimento ({inst.fmt(extreme)})"
+    else:
+        sl = L - td * (0.35 * a + spread)
+        sl_basis = f"de volta para dentro do nível {inst.fmt(L)} (rompimento invalidado)"
+    sl_dist = td * (entry - sl)
+    min_d = max(0.6 * a, 4 * spread, 0.4 * atr_h1 if b.tf == "M15" else 0.0)
+    if sl_dist < min_d:
+        sl_dist = min_d
+        sl = entry - td * sl_dist
+        sl_basis += " · ampliado para a distância mínima (volatilidade/spread)"
+
+    targets = [] if zones is None else (zones.above(entry) if td == 1 else zones.below(entry))
+    front = 0.1 * a
+    tp1_dist, tp1_basis = None, ""
+    for z in targets:
+        dist = td * (z.price - entry) - front
+        if dist >= sl_dist:
+            if dist <= 2.5 * sl_dist:
+                tp1_dist, tp1_basis = dist, f"antes da zona {inst.fmt(z.price)} ({z.label()})"
+            break
+    if tp1_dist is None:
+        tp1_dist, tp1_basis = 1.5 * sl_dist, "1.5R"
+    tp2_dist, tp2_basis = None, ""
+    if b.status == "falso":
+        if b.level.height:
+            dist = td * ((L + td * b.level.height) - entry)
+            if tp1_dist + 0.5 * sl_dist <= dist <= 5 * sl_dist:
+                tp2_dist, tp2_basis = dist, "outro lado do range"
+    elif b.level.height:
+        dist = td * ((L + td * b.level.height) - entry)
+        if tp1_dist + 0.5 * sl_dist <= dist <= 5 * sl_dist:
+            tp2_dist, tp2_basis = dist, f"projeção da altura do range ({inst.pips(b.level.height):.0f} pips)"
+    if tp2_dist is None:
+        tp2_dist, tp2_basis = max(2.5 * sl_dist, tp1_dist + 0.8 * sl_dist), "2.5R"
+    lots, risk_amount, _ = position_size(inst, sl_dist, s.balance, s.risk_pct, prices, s.account_ccy)
+    return BreakoutPlan(entry, sl, entry + td * tp1_dist, entry + td * tp2_dist, inst.pips(sl_dist),
+                        inst.pips(tp1_dist), inst.pips(tp2_dist), tp1_dist / sl_dist, tp2_dist / sl_dist,
+                        lots, risk_amount, sl_basis, tp1_basis, tp2_basis)
+
+
+# ---------------------------------------------------------------------------- tracker
+
+class Tracker:
+    """Remembers events between scans so only genuinely new ones are flagged."""
+
+    def __init__(self, path: str | None, ttl_hours: float = 8.0):
+        self.path, self.ttl = path, timedelta(hours=ttl_hours)
+        self.items: list[dict] = []
+        if path and os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    self.items = json.load(f)
+            except (OSError, ValueError):
+                self.items = []
+
+    def mark(self, events: list[Breakout], now: datetime) -> int:
+        new = 0
+        for b in events:
+            trap = b.status == "falso"
+            m = next((it for it in self.items if it["sym"] == b.symbol and it["tf"] == b.tf
+                      and it["dir"] == b.direction and it["trap"] == trap
+                      and abs(it["level"] - b.level.price) <= 0.5 * max(b.atr, it["atr"])), None)
+            if m is None:
+                m = {"sym": b.symbol, "tf": b.tf, "dir": b.direction, "trap": trap,
+                     "first": now.isoformat()}
+                self.items.append(m)
+                b.is_new = True
+                new += 1
+            m.update(level=b.level.price, atr=b.atr, last=now.isoformat())
+            b.first_seen = datetime.fromisoformat(m["first"])
+        cutoff = now - self.ttl
+        self.items = [it for it in self.items if datetime.fromisoformat(it["last"]) >= cutoff]
+        if self.path:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.items, f)
+            os.replace(tmp, self.path)
+        return new
+
+
+# ---------------------------------------------------------------------------- scan
+
+@dataclass
+class BreakoutScan:
+    now: datetime
+    session: sessions.SessionState
+    breakouts: list[Breakout]
+    scanned: int
+    closed: list[str]
+    new_count: int
+    status: dict[str, str]
+    errors: dict[str, str]
+
+
+def scan(provider, s: Settings, spec: str | None, now: datetime, state_path: str | None = None,
+         progress=None) -> BreakoutScan:
+    def step(p, msg):
+        if progress:
+            progress(min(max(p, 0.0), 100.0), msg)
+
+    targets = select(spec)
+    need = {i.symbol: i for i in targets}
+    if any(not i.is_metal for i in targets):
+        for i in FX_PAIRS:                 # full matrix for the strength filter
+            need.setdefault(i.symbol, i)
+    step(2, "Buscando preços ao vivo")
+    data, errors = provider.load_instruments(
+        list(need.values()), now, spec=LIGHT,
+        progress=lambda k, n: step(3 + 67 * k / n, f"Preços ao vivo {k}/{n}"))
+    ctx = provider.load_events(now)
+    fx = {k: v.frames["H1"] for k, v in data.items() if not v.inst.is_metal}
+    strength = strength_mod.compute(fx) if len(fx) >= 20 else None
+    sess = sessions.state(now)
+    prices = {k: v.price for k, v in data.items()}
+
+    found: list[Breakout] = []
+    closed: list[str] = []
+    for k, inst in enumerate(targets):
+        d = data.get(inst.symbol)
+        if d is None:
+            continue
+        if not d.tradeable:
+            closed.append(inst.symbol)
+            continue
+        step(72 + 26 * k / max(len(targets), 1), f"Procurando rompimentos em {inst.symbol}")
+        try:
+            found += detect(d, now, s, prices, strength, ctx.events, sess)
+        except Exception as e:  # noqa: BLE001 - one instrument must not break the monitor
+            errors[inst.symbol] = f"erro na detecção: {e}"
+    found.sort(key=lambda b: (b.quality, -b.bars_since), reverse=True)
+    new = Tracker(state_path).mark(found, now)
+    step(100, "Concluído")
+    return BreakoutScan(now, sess, found, len(targets), closed, new, ctx.status, errors)

@@ -16,8 +16,13 @@ def build_parser() -> argparse.ArgumentParser:
         prog="fxengine",
         description="Motor de análise gráfica, quantitativa e fundamentalista de Forex e metais "
                     "— encontra a melhor entrada a mercado agora.")
-    p.add_argument("cmd", nargs="?", default="scan", choices=["scan", "analisar", "analyze"],
-                   help="scan/analisar = varrer o universo (padrão); analyze = detalhar ativos (use --ativos)")
+    p.add_argument("cmd", nargs="?", default="scan", choices=["scan", "analisar", "analyze", "rompimentos"],
+                   help="scan/analisar = varrer o universo (padrão); analyze = detalhar ativos (use --ativos); "
+                        "rompimentos = detector de rompimentos em tempo real")
+    p.add_argument("--monitorar", type=int, metavar="SEG", default=0,
+                   help="com 'rompimentos': repetir a varredura a cada SEG segundos e avisar os novos")
+    p.add_argument("--min-nota", default="B", choices=["A+", "A", "B", "C", "D"],
+                   help="com 'rompimentos': nota mínima exibida (padrão B)")
     p.add_argument("--ativos", "-a", default=None,
                    help="'all' (padrão), 'fx', 'metais' ou lista: EURUSD,XAUUSD")
     p.add_argument("--saldo", type=float, default=10_000.0, help="saldo da conta em USD (padrão 10000)")
@@ -42,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
                  use_edge=not a.sem_edge, use_news=not a.sem_noticias, use_cot=not a.sem_cot)
     if a.min_score is not None:
         s.min_score = a.min_score
+    if a.cmd == "rompimentos":
+        return run_breakouts(s, a)
     t0 = time.time()
     res = Engine(s).scan(a.ativos)
     if not res.opportunities:
@@ -71,6 +78,52 @@ def main(argv: list[str] | None = None) -> int:
             f.write(to_json(res))
         print(f" relatório salvo em {stem}.md / .json")
     return 0
+
+
+
+GRADE_ORDER = ["D", "C", "B", "A", "A+"]
+
+
+def render_breakouts(r, min_grade: str = "B", only_new: bool = False) -> str:
+    from .breakouts import STATUS_LABEL
+    keep = [b for b in r.breakouts if GRADE_ORDER.index(b.grade) >= GRADE_ORDER.index(min_grade)
+            and (b.is_new or not only_new)]
+    head = (f"ROMPIMENTOS · {r.now:%d/%m %H:%M:%S} UTC · {r.session.label} · {r.scanned} ativos · "
+            f"{len(r.breakouts)} eventos ({r.new_count} novos)")
+    lines = [head, "-" * len(head)]
+    if not keep:
+        lines.append(f"  nenhum rompimento com nota ≥ {min_grade}" + (" novo" if only_new else ""))
+    for b in keep:
+        p, i = b.plan, b.inst
+        flag = "NOVO " if b.is_new else "     "
+        act = "✔" if b.actionable else "·"
+        lines.append(f" {act} {flag}{b.symbol:<7} {b.tf:<3} {b.side:<6} {STATUS_LABEL[b.status]:<17} "
+                     f"nota {b.grade:<2} ({b.quality:4.0f})  nível {i.fmt(b.level.price)} [{b.level.label[:48]}]")
+        lines.append(f"         entrada {i.fmt(p.entry)}  stop {i.fmt(p.sl)}  alvo1 {i.fmt(p.tp1)} ({p.rr1:.1f}R)  "
+                     f"alvo2 {i.fmt(p.tp2)} ({p.rr2:.1f}R)  lote {p.lots:.2f}")
+        if b.cons:
+            lines.append(f"         atenção: {'; '.join(b.cons[:2])}")
+    return "\n".join(lines)
+
+
+def run_breakouts(s: Settings, a) -> int:
+    import os
+    from datetime import datetime, timezone
+    from . import breakouts as bk
+
+    eng = Engine(s)
+    os.makedirs(s.cache_dir, exist_ok=True)
+    state = os.path.join(s.cache_dir, "breakouts_state.json")
+    first = True
+    while True:
+        r = bk.scan(eng.provider, s, a.ativos, eng.now() if s.offline else datetime.now(timezone.utc), state)
+        print(render_breakouts(r, a.min_nota, only_new=not first), flush=True)
+        if any(b.is_new and b.actionable for b in r.breakouts) and not first:
+            print("\a", end="", flush=True)
+        if not a.monitorar:
+            return 0
+        first = False
+        time.sleep(max(a.monitorar, 30))
 
 
 if __name__ == "__main__":

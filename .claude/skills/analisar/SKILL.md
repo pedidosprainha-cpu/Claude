@@ -36,5 +36,9 @@ Exemplos: `-a metais`, `-a EURUSD,XAUUSD --detalhe`, `--saldo 25000 --risco 0.5`
    - Se o motor não recomendou entrada: diga por quê (gates) e mostre o melhor
      candidato e o que precisaria mudar.
 
-5. Regras: use somente números da saída do motor (nunca invente preço); cite o horário
+5. Se o usuário pedir rompimentos/breakouts, rode também
+   `python3 -m fxengine rompimentos --min-nota B` e apresente os acionáveis (✔): ativo,
+   status, nível rompido, plano e pontos de atenção.
+
+6. Regras: use somente números da saída do motor (nunca invente preço); cite o horário
    da cotação; inclua o aviso de que é análise automatizada, não recomendação de investimento.

@@ -20,11 +20,22 @@ Versões novas instalam por cima da antiga desde que assinadas com a mesma chave
 | Aba | O que tem |
 |---|---|
 | **Analisar** | O botão grande. Mostra o progresso (30 s a 1 min) e depois a decisão: **EXECUTAR AGORA** (compra/venda, entrada, stop, alvos, lote, probabilidade) ou **NÃO EXECUTAR AGORA**, com o melhor candidato e o motivo. Botões *Copiar ordem* e *Compartilhar*. |
+| **Rompimentos** | Reconhecimento de rompimentos (breakouts) em tempo real em M15 e H1. **Monitorar ao vivo** liga um serviço que varre os ativos a cada 1, 2 ou 5 min, inclusive com a tela apagada, e manda uma **notificação** a cada rompimento novo e acionável com a nota escolhida (A+, A ou B). Cada evento mostra o status (ROMPENDO AGORA, CONFIRMADO, RETESTE, FALSO ROMPIMENTO), o nível rompido (máxima/mínima de 12h/24h/5 dias, consolidação, range asiático, máx./mín. do dia e da semana, swings, números redondos), a nota, os fatores a favor/contra e o plano de entrada a mercado. |
 | **Ranking** | Todos os ativos ordenados pela nota; toque em um para ver o plano completo. Filtro "Executáveis". |
 | **Mercado** | Força das 8 moedas, macro (VIX, Treasuries, DXY, petróleo, cobre), juros dos bancos centrais, agenda de alto impacto, COT e manchetes. |
 | **Ajustes** | Saldo da conta, risco por trade (o lote é calculado com eles), ativos (Todos / Forex / Metais), estudo de edge histórico e manchetes. |
 
 A última análise fica salva; se ela tiver mais de 5 minutos o app avisa para analisar de novo.
+
+### Monitor de rompimentos
+
+- Na primeira vez o Android pede permissão de **notificações**: aceite para receber os alertas.
+- Enquanto o monitor estiver ligado aparece um aviso fixo "Monitorando rompimentos", com o
+  botão **Parar**. Tocar em um alerta abre direto a aba Rompimentos.
+- Cada ciclo baixa só o necessário (M15 de 5 dias + H1 de 1 mês, com cache): cerca de
+  70 MB/h a cada 1 min, 35 MB/h a cada 2 min e 15 MB/h a cada 5 min.
+- Alguns fabricantes (Xiaomi, Samsung, Huawei…) encerram apps em segundo plano. Se os
+  alertas pararem com a tela apagada, desative a otimização de bateria do FX Engine.
 
 ## Compilar
 

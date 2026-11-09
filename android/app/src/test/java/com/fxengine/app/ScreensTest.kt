@@ -7,6 +7,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import com.fxengine.app.data.AppSettings
+import com.fxengine.app.data.BreakoutOutput
+import com.fxengine.app.data.BreakoutResult
+import com.fxengine.app.data.parseBreakouts
+import com.fxengine.app.monitor.MonitorState
+import com.fxengine.app.ui.BottomBar
+import com.fxengine.app.ui.BreakoutContent
+import com.fxengine.app.ui.BreakoutDetail
 import com.fxengine.app.data.EngineOutput
 import com.fxengine.app.data.ScanResult
 import com.fxengine.app.data.parseEngineOutput
@@ -51,6 +58,49 @@ class ScreensTest {
         CompositionLocalProvider(LocalStaticUi provides true) {
             Box(Modifier.fillMaxSize().background(Fx.Bg)) { content() }
         }
+    }
+
+    private fun breakouts(): BreakoutResult {
+        val out = parseBreakouts(javaClass.getResource("/sample_breakouts.json")!!.readText())
+        assertTrue("breakout fixture must parse", out is BreakoutOutput.Ok)
+        return (out as BreakoutOutput.Ok).result
+    }
+
+    @Test
+    fun parsesBreakoutFixture() {
+        val r = breakouts()
+        assertTrue(r.items.isNotEmpty() && r.scanned == 32)
+    }
+
+    @Test
+    fun breakouts_monitor_on() = shot("breakouts_monitor_on") {
+        Frame {
+            BreakoutContent(
+                MonitorState(active = true, result = breakouts(), resultAtMillis = System.currentTimeMillis(),
+                    nextAtMillis = System.currentTimeMillis() + 74_000, cycles = 3),
+                AppSettings(), notificationsAllowed = true, {}, {}, {},
+            )
+        }
+    }
+
+    @Test
+    fun breakouts_scanning_off() = shot("breakouts_scanning_off") {
+        Frame {
+            BreakoutContent(
+                MonitorState(scanning = true, progress = 37, step = "Preços ao vivo 12/32"),
+                AppSettings(), notificationsAllowed = true, {}, {}, {},
+            )
+        }
+    }
+
+    @Test
+    fun breakout_detail() = shot("breakout_detail") {
+        Frame { BreakoutDetail(breakouts().items.first()) }
+    }
+
+    @Test
+    fun bottom_bar() = shot("bottom_bar") {
+        Frame { BottomBar(1) {} }
     }
 
     @Test

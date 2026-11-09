@@ -6,6 +6,7 @@ strength meter has a well-defined ground truth.
 """
 from __future__ import annotations
 
+import zlib
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -45,9 +46,11 @@ class SyntheticProvider:
             self.paths[ccy] = np.cumsum(steps)
         self.rng = rng
 
-    def _ohlc(self, close: np.ndarray, vol: float) -> pd.DataFrame:
+    def _ohlc(self, close: np.ndarray, vol: float, key: str = "") -> pd.DataFrame:
+        # Per-instrument seed: repeated loads return identical candles (deterministic).
+        rng = np.random.default_rng(self.s.seed + zlib.crc32(key.encode()))
         o = np.concatenate([[close[0]], close[:-1]])
-        wick = np.abs(self.rng.normal(0, vol * 0.6, len(close))) * close
+        wick = np.abs(rng.normal(0, vol * 0.6, len(close))) * close
         df = pd.DataFrame({"o": o, "h": np.maximum(o, close) + wick,
                            "l": np.minimum(o, close) - wick, "c": close, "v": 0.0}, index=self.index)
         return df
@@ -55,12 +58,12 @@ class SyntheticProvider:
     def series(self, inst: Instrument) -> pd.DataFrame:
         if inst.is_metal:
             close = METAL_LEVEL[inst.base] * np.exp(self.paths[inst.base] - self.paths["USD"] * 0.5)
-            return self._ohlc(close, 0.0011)
+            return self._ohlc(close, 0.0011, inst.symbol)
         lvl = LEVEL[inst.base] / LEVEL[inst.quote]
         close = lvl * np.exp(self.paths[inst.base] - self.paths[inst.quote])
-        return self._ohlc(close, 0.00045)
+        return self._ohlc(close, 0.00045, inst.symbol)
 
-    def load_instrument(self, inst: Instrument, now: datetime) -> InstrumentData:
+    def load_instrument(self, inst: Instrument, now: datetime, spec: dict | None = None) -> InstrumentData:
         m5_all = self.series(inst)
         m5 = m5_all[m5_all.index >= m5_all.index[-1] - pd.Timedelta(days=7)]
         m15 = resample(m5_all[m5_all.index >= m5_all.index[-1] - pd.Timedelta(days=30)], "15min")
@@ -73,13 +76,17 @@ class SyntheticProvider:
         return InstrumentData(inst, frames, price, price - half, price + half,
                               m5.index[-1].to_pydatetime(), "sintético", True, ["dados sintéticos (modo offline)"])
 
-    def load_instruments(self, insts, now, progress=None):
+    def load_instruments(self, insts, now, progress=None, spec=None):
         out = {}
         for k, i in enumerate(insts, 1):
-            out[i.symbol] = self.load_instrument(i, now)
+            out[i.symbol] = self.load_instrument(i, now, spec)
             if progress:
                 progress(k, len(insts))
         return out, {}
+
+    def load_events(self, now: datetime) -> MarketContext:
+        full = self.load_context(now)
+        return MarketContext(now=now, events=full.events, status={"calendar": "sintético"})
 
     def load_context(self, now: datetime) -> MarketContext:
         rng = np.random.default_rng(self.s.seed + 1)

@@ -9,6 +9,8 @@ data class AppSettings(
     val assets: String = "all",      // "all" | "fx" | "metais"
     val useEdge: Boolean = true,
     val useNews: Boolean = true,
+    val monitorIntervalSec: Int = 120,   // breakout monitor cycle
+    val alertMinGrade: String = "A",     // notify only breakouts with this grade or better
 )
 
 class Prefs(context: Context) {
@@ -21,6 +23,8 @@ class Prefs(context: Context) {
         assets = sp.getString("assets", "all") ?: "all",
         useEdge = sp.getBoolean("use_edge", true),
         useNews = sp.getBoolean("use_news", true),
+        monitorIntervalSec = sp.getInt("monitor_interval", 120),
+        alertMinGrade = sp.getString("alert_min_grade", "A") ?: "A",
     )
 
     fun save(s: AppSettings) {
@@ -30,6 +34,8 @@ class Prefs(context: Context) {
             .putString("assets", s.assets)
             .putBoolean("use_edge", s.useEdge)
             .putBoolean("use_news", s.useNews)
+            .putInt("monitor_interval", s.monitorIntervalSec)
+            .putString("alert_min_grade", s.alertMinGrade)
             .apply()
     }
 
@@ -40,4 +46,12 @@ class Prefs(context: Context) {
     fun saveLast(raw: String) = runCatching { lastFile.writeText(raw) }
 
     fun loadLast(): String? = runCatching { if (lastFile.exists()) lastFile.readText() else null }.getOrNull()
+
+    private val lastBreakouts = File(context.filesDir, "ultimos_rompimentos.json")
+
+    fun saveBreakouts(raw: String) = runCatching { lastBreakouts.writeText(raw) }
+
+    fun loadBreakouts(): Pair<String, Long>? = runCatching {
+        if (lastBreakouts.exists()) lastBreakouts.readText() to lastBreakouts.lastModified() else null
+    }.getOrNull()
 }

@@ -9,6 +9,13 @@ def _default_cache() -> str:
     return os.environ.get("FXENGINE_CACHE", os.path.join(os.getcwd(), ".cache", "fxengine"))
 
 
+GRADES = ((65, "A+"), (55, "A"), (45, "B"), (35, "C"), (0, "D"))
+
+
+def grade(score: float) -> str:
+    return next(g for t, g in GRADES if score >= t)
+
+
 @dataclass
 class Settings:
     # --- account / risk ---------------------------------------------------

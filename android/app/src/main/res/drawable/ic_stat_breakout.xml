@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon (white, 24dp): price breaking up through a horizontal level. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M2,13h7v2H2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M15,13h7v2h-7z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M4,20 L9,17 L12,19 L19,6" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M15,5 L21,3 L20,9z" />
+</vector>

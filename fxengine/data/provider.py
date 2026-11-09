@@ -32,6 +32,14 @@ INTRADAY = {  # name: (yahoo interval, range, cache ttl seconds, pandas freq)
     "H1": ("1h", "1y", 240, "1h"),
 }
 
+# Light profile for the real-time breakout monitor (~70 KB per instrument per cycle,
+# H1 mostly served from cache): enough history for 48-bar M15 / 120-bar H1 ranges,
+# prior day/week levels and ATRs.
+LIGHT = {
+    "M15": ("15m", "5d", 50, "15min"),
+    "H1": ("1h", "1mo", 600, "1h"),
+}
+
 MACRO_TICKERS = {
     "DXY": "DX-Y.NYB", "US10Y": "^TNX", "US5Y": "^FVX", "US3M": "^IRX", "VIX": "^VIX",
     "SPX_FUT": "ES=F", "OIL": "CL=F", "COPPER": "HG=F", "GOLD_FUT": "GC=F",
@@ -89,11 +97,14 @@ def inject_live(df: pd.DataFrame, ts: datetime, price: float, freq: str) -> pd.D
     return pd.concat([df, row[df.columns.intersection(row.columns)]])
 
 
-def build_frames(m5: pd.DataFrame, m15: pd.DataFrame, h1: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def build_frames(m5: pd.DataFrame | None, m15: pd.DataFrame, h1: pd.DataFrame) -> dict[str, pd.DataFrame]:
     h4 = resample(h1, "4h")
     d1 = ny_daily(h1)
     w1 = resample(d1.assign(v=0.0), "W-FRI")
-    return {"M5": m5, "M15": m15, "H1": h1, "H4": h4, "D1": d1, "W1": w1}
+    out = {"M15": m15, "H1": h1, "H4": h4, "D1": d1, "W1": w1}
+    if m5 is not None:
+        out["M5"] = m5
+    return out
 
 
 class Provider:
@@ -102,10 +113,12 @@ class Provider:
         self.http = Http(settings.cache_dir, timeout=settings.timeout)
 
     # ------------------------------------------------------------------ instruments
-    def load_instrument(self, inst: Instrument, now: datetime) -> InstrumentData:
+    def load_instrument(self, inst: Instrument, now: datetime, spec: dict | None = None) -> InstrumentData:
+        spec = spec or INTRADAY
+        fine = next(iter(spec))                 # finest timeframe in the profile
         notes: list[str] = []
         raw, meta = {}, {}
-        for name, (iv, rng, ttl, _) in INTRADAY.items():
+        for name, (iv, rng, ttl, _) in spec.items():
             raw[name], meta[name] = yahoo.candles(self.http, inst.yahoo, iv, rng, ttl=ttl)
 
         q = None
@@ -116,7 +129,8 @@ class Provider:
 
         if inst.is_metal:
             if q is not None:
-                fut_ref = raw["M5"].c.asof(pd.Timestamp(q.ts)) if q.ts >= raw["M5"].index[0] else raw["M5"].c.iloc[-1]
+                ref = raw[fine]
+                fut_ref = ref.c.asof(pd.Timestamp(q.ts)) if q.ts >= ref.index[0] else ref.c.iloc[-1]
                 ratio = q.mid / float(fut_ref)
                 if not 0.9 < ratio < 1.1:
                     notes.append(f"basis spot/futuro anômalo ({ratio:.4f}); ajuste ignorado")
@@ -131,16 +145,16 @@ class Provider:
         if q is not None:
             price, bid, ask, qts, src = q.mid, q.bid, q.ask, q.ts, q.source
         else:
-            m = meta["M5"]
-            price = float(m.get("regularMarketPrice") or raw["M5"].c.iloc[-1])
-            qts = datetime.fromtimestamp(m.get("regularMarketTime", raw["M5"].index[-1].timestamp()), tz=timezone.utc)
+            m = meta[fine]
+            price = float(m.get("regularMarketPrice") or raw[fine].c.iloc[-1])
+            qts = datetime.fromtimestamp(m.get("regularMarketTime", raw[fine].index[-1].timestamp()), tz=timezone.utc)
             half = FALLBACK_SPREAD_PIPS.get(inst.symbol, 1.5 if inst.quote in ("USD",) else 2.5) * inst.pip / 2
             bid, ask, src = price - half, price + half, "Yahoo (spread estimado)"
 
         frames = {}
-        for name, (_, _, _, freq) in INTRADAY.items():
+        for name, (_, _, _, freq) in spec.items():
             frames[name] = inject_live(raw[name], qts, price, freq)
-        frames = build_frames(frames["M5"], frames["M15"], frames["H1"])
+        frames = build_frames(frames.get("M5"), frames["M15"], frames["H1"])
 
         open_now = (metals_open(now) if inst.is_metal else fx_open(now))
         age = (now - qts).total_seconds()
@@ -151,13 +165,14 @@ class Provider:
             notes.append(f"cotação com {age / 60:.0f} min de atraso")
         return InstrumentData(inst, frames, price, bid, ask, qts, src, tradeable, notes)
 
-    def load_instruments(self, insts: list[Instrument], now: datetime, progress=None) -> tuple[dict, dict]:
+    def load_instruments(self, insts: list[Instrument], now: datetime, progress=None,
+                         spec: dict | None = None) -> tuple[dict, dict]:
         """progress(done, total) is called from this thread after each instrument."""
         out, errors = {}, {}
 
         def job(i):
             try:
-                return i.symbol, self.load_instrument(i, now), None
+                return i.symbol, self.load_instrument(i, now, spec), None
             except Exception as e:  # noqa: BLE001 - one bad feed must not kill the scan
                 return i.symbol, None, str(e)
 
@@ -172,6 +187,16 @@ class Provider:
         return out, errors
 
     # ------------------------------------------------------------------ context
+    def load_events(self, now: datetime) -> MarketContext:
+        """Calendar only (event-risk gate) — what the real-time monitor needs."""
+        ctx = MarketContext(now=now)
+        try:
+            ctx.events = fd.calendar(self.http)
+            ctx.status["calendar"] = "ok"
+        except Exception as e:  # noqa: BLE001
+            ctx.status["calendar"] = f"falhou: {e}"
+        return ctx
+
     def load_context(self, now: datetime) -> MarketContext:
         ctx = MarketContext(now=now)
 

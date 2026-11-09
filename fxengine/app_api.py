@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 import traceback
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
+from . import breakouts as bk
 from .config import Settings
 from .engine import Engine, Opportunity, ScanResult
 
@@ -174,5 +176,111 @@ def run(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets
                               ensure_ascii=False)
         return json.dumps(result_dict(res, tz_name, time.time() - t0), ensure_ascii=False, default=str)
     except Exception as e:  # noqa: BLE001 - surface any failure to the UI instead of crashing
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
+                           "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------- breakouts
+
+def breakout_order_text(b: bk.Breakout) -> str:
+    p, i = b.plan, b.inst
+    return "\n".join([
+        f"{b.side} {b.symbol} a mercado — {bk.STATUS_LABEL[b.status].lower()} ({b.tf})",
+        f"Nível: {i.fmt(b.level.price)} ({b.level.label})",
+        f"Entrada: {i.fmt(p.entry)}",
+        f"Stop loss: {i.fmt(p.sl)} ({p.sl_pips:.1f} pips)",
+        f"Alvo 1: {i.fmt(p.tp1)} ({p.rr1:.2f}R) - realizar 50% e stop na entrada",
+        f"Alvo 2: {i.fmt(p.tp2)} ({p.rr2:.2f}R)",
+        f"Lote: {p.lots:.2f} (risco US$ {p.risk_amount:,.2f})",
+    ])
+
+
+def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
+    p, i = b.plan, b.inst
+    age = int((now - b.first_seen).total_seconds() // 60) if b.first_seen else 0
+    return {
+        "id": f"{b.symbol}|{b.tf}|{b.direction}|{b.status == 'falso'}|{i.fmt(b.level.price)}",
+        "symbol": b.symbol,
+        "name": i.name or f"{i.base}/{i.quote}",
+        "tf": b.tf,
+        "direction": b.direction,
+        "break_dir": b.break_dir,
+        "side": b.side,
+        "status": b.status,
+        "status_label": bk.STATUS_LABEL[b.status],
+        "extended": b.extended,
+        "actionable": b.actionable,
+        "headline": b.headline(),
+        "level": i.fmt(b.level.price),
+        "level_label": b.level.label,
+        "level_kind": b.level.kind,
+        "bid": i.fmt(b.bid),
+        "ask": i.fmt(b.ask),
+        "ext_atr": _num(b.ext_atr),
+        "ext_pips": _num(i.pips(b.ext_atr * b.atr), 1),
+        "bars_since": b.bars_since,
+        "broke_at": b.broke_at.tz_convert(tz).strftime("%H:%M") if b.broke_at.tzinfo else str(b.broke_at),
+        "first_seen": b.first_seen.astimezone(tz).strftime("%H:%M") if b.first_seen else "",
+        "age_min": age,
+        "is_new": b.is_new,
+        "quality": _num(b.quality, 1),
+        "grade": b.grade,
+        "pros": b.pros,
+        "cons": b.cons,
+        "hist": {"n": b.hist_n, "wins": b.hist_wins, "p": _num(b.hist_p, 3)} if b.hist_n >= 8 else None,
+        "plan": {
+            "entry": i.fmt(p.entry), "sl": i.fmt(p.sl), "tp1": i.fmt(p.tp1), "tp2": i.fmt(p.tp2),
+            "sl_pips": _num(p.sl_pips, 1), "tp1_pips": _num(p.tp1_pips, 1), "tp2_pips": _num(p.tp2_pips, 1),
+            "rr1": _num(p.rr1), "rr2": _num(p.rr2), "lots": _num(p.lots), "risk_amount": _num(p.risk_amount),
+            "sl_basis": p.sl_basis, "tp1_basis": p.tp1_basis, "tp2_basis": p.tp2_basis,
+        },
+        "order_text": breakout_order_text(b),
+    }
+
+
+def breakouts_result_dict(r: bk.BreakoutScan, tz_name: str = "America/Sao_Paulo", elapsed: float = 0.0) -> dict:
+    tz = ZoneInfo(tz_name)
+    loc = r.now.astimezone(tz)
+    issues = [f"{k}: {v}" for k, v in {**r.status, **r.errors}.items() if v not in ("ok", "sintético")]
+    if r.closed:
+        issues.append(f"mercado fechado / sem cotação ao vivo: {', '.join(r.closed)}")
+    items = [breakout_dict(b, tz, r.now) for b in r.breakouts]
+    return {
+        "ok": True,
+        "timestamp": loc.strftime("%d/%m/%Y %H:%M:%S"),
+        "time": loc.strftime("%H:%M:%S"),
+        "session": r.session.label,
+        "fx_open": r.session.fx_open,
+        "metals_open": r.session.metals_open,
+        "scanned": r.scanned,
+        "new_count": r.new_count,
+        "new_actionable": sum(1 for b in r.breakouts if b.is_new and b.actionable),
+        "breakouts": items,
+        "data_issues": issues,
+        "elapsed_s": _num(elapsed, 1),
+    }
+
+
+def scan_breakouts(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets: str = "all",
+                   tz_name: str = "America/Sao_Paulo", listener=None, offline: bool = False) -> str:
+    """Light, fast scan for the real-time breakout monitor. Returns JSON."""
+    def progress(pct: float, msg: str) -> None:
+        if listener is not None:
+            listener.onProgress(int(round(pct)), msg)
+
+    t0 = time.time()
+    try:
+        s = Settings(balance=float(balance), risk_pct=float(risk_pct), cache_dir=cache_dir,
+                     workers=6, offline=bool(offline))
+        os.makedirs(cache_dir, exist_ok=True)
+        eng = Engine(s)
+        res = bk.scan(eng.provider, s, None if assets in (None, "", "all") else assets, eng.now(),
+                      state_path=os.path.join(cache_dir, "breakouts_state.json"), progress=progress)
+        if res.scanned and not res.breakouts and len(res.errors) >= res.scanned:
+            return json.dumps({"ok": False, "error": "Sem dados de mercado. Verifique a internet.",
+                               "detail": "; ".join(f"{k}: {v}" for k, v in list(res.errors.items())[:6])},
+                              ensure_ascii=False)
+        return json.dumps(breakouts_result_dict(res, tz_name, time.time() - t0), ensure_ascii=False, default=str)
+    except Exception as e:  # noqa: BLE001
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
                            "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)
