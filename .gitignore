@@ -12,3 +12,4 @@ android/.kotlin/
 android/keystore.properties
 *.keystore
 *.jks
+research/data/

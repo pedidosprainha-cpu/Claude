@@ -143,10 +143,11 @@ fun BreakoutContent(
     ) {
         item { ScreenTitle("Rompimentos", "Detecção em tempo real · M15 e H1 · ${assetsLabel(settings.assets)}") }
         item { MonitorCard(mon, settings, notificationsAllowed, onScanNow, onToggleMonitor, onSettings) }
+        result?.model?.let { m -> item { ValidationCard(m) } }
         if (result != null) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(filter == 0, { filter = 0 }, label = { Text("Acionáveis (${all.count { it.actionable }})") })
+                    FilterChip(filter == 0, { filter = 0 }, label = { Text("Melhores A/A+ (${all.count { it.actionable }})") })
                     FilterChip(filter == 1, { filter = 1 }, label = { Text("Todos (${all.size})") })
                     FilterChip(filter == 2, { filter = 2 }, label = { Text("Falsos (${all.count { it.isTrap }})") })
                 }
@@ -154,7 +155,7 @@ fun BreakoutContent(
             if (shown.isEmpty()) {
                 item {
                     Text(
-                        if (filter == 0) "Nenhum rompimento acionável agora. Com o monitor ligado você recebe um alerta assim que surgir."
+                        if (filter == 0) "Nenhum rompimento com nota A ou A+ agora. Com o monitor ligado você recebe um alerta assim que surgir."
                         else "Nada nesta categoria agora.",
                         color = Fx.Muted, fontSize = 14.sp, modifier = Modifier.padding(vertical = 16.dp),
                     )
@@ -288,6 +289,37 @@ private fun MonitorCard(
 }
 
 @Composable
+private fun ValidationCard(m: com.fxengine.app.data.ModelInfo) {
+    SectionCard("Precisão validada no histórico") {
+        Text(
+            "${"%,d".format(m.events).replace(',', '.')} rompimentos reconstituídos (${m.periodFrom} a ${m.periodTo}), " +
+                "com spread, avaliados em dias que o modelo não viu:",
+            color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("Antes", color = Fx.Muted, fontSize = 12.sp)
+                Text("${(m.oldHit * 100).toInt()}% no alvo 1", color = Fx.Text, fontWeight = FontWeight.Bold)
+                Text("${if (m.oldR >= 0) "+" else ""}${m.oldR.f()}R por trade", color = Fx.Sell, fontSize = 13.sp)
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Agora (nota A/A+)", color = Fx.Muted, fontSize = 12.sp)
+                Text("${(m.newHit * 100).toInt()}% no alvo 1", color = Fx.Buy, fontWeight = FontWeight.Bold)
+                Text("${if (m.newR >= 0) "+" else ""}${m.newR.f()}R por trade",
+                    color = if (m.newR >= 0) Fx.Buy else Fx.Warn, fontSize = 13.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "A precisão subiu muito, mas a expectativa ainda fica perto de zero depois do spread: use os alertas " +
+                "como oportunidade a confirmar no gráfico, não como ordem automática.",
+            color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
+        )
+    }
+}
+
+@Composable
 private fun StatusPill(text: String, color: Color) {
     Box(
         Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.16f))
@@ -324,6 +356,13 @@ fun BreakoutCard(b: BreakoutItem, onClick: () -> Unit) {
                     (if (b.isTrap) "Falso rompimento de " else "Nível ") + "${b.level} · ${b.levelLabel}",
                     color = Fx.Text.copy(alpha = 0.9f), fontSize = 13.sp, lineHeight = 17.sp, maxLines = 2,
                 )
+                if (b.prob != null && b.evR != null) {
+                    Text(
+                        "Alvo 1 antes do stop: ${(b.prob * 100).toInt()}% · expectativa ${if (b.evR >= 0) "+" else ""}${b.evR.f()}R",
+                        color = if (b.evR >= 0.1) Fx.Buy else if (b.evR >= 0) Fx.Text else Fx.Warn,
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 Text(
                     "${if (b.extPips >= 0) "+" else ""}${b.extPips.f(1)} pips do nível · detectado ${b.firstSeen}" +
                         if (b.ageMin > 0) " (há ${b.ageMin} min)" else " (agora)",
@@ -353,9 +392,12 @@ fun BreakoutDetail(b: BreakoutItem) {
                 }
                 GradeBadge(b.grade, b.quality, 62)
             }
-            if (!b.actionable) {
+            if (b.blocked) {
                 Spacer(Modifier.height(8.dp))
-                Text("Somente referência — não está acionável agora (veja os pontos de atenção).", color = Fx.Warn, fontSize = 13.sp)
+                Text("Bloqueado agora (veja os pontos de atenção): não gera alerta.", color = Fx.Warn, fontSize = 13.sp)
+            } else if (!b.actionable) {
+                Spacer(Modifier.height(8.dp))
+                Text("Fora dos melhores 10% do histórico (nota abaixo de A).", color = Fx.Muted, fontSize = 13.sp)
             }
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(color = Fx.Outline)
@@ -365,6 +407,14 @@ fun BreakoutDetail(b: BreakoutItem) {
             PlanRow("Alvo 1", p.tp1, "${p.tp1Pips.f(1)} pips · ${p.rr1.f()}R · ${p.tp1Basis} · realizar 50%", Fx.Buy)
             PlanRow("Alvo 2", p.tp2, "${p.tp2Pips.f(1)} pips · ${p.rr2.f()}R · ${p.tp2Basis}", Fx.Buy)
             PlanRow("Lote", p.lots.f(2), "risco ${money(p.riskAmount)}")
+            if (b.prob != null && b.evR != null) {
+                PlanRow(
+                    "Prob. alvo 1", "${(b.prob * 100).toInt()}%",
+                    "probabilidade calibrada em rompimentos históricos parecidos · expectativa " +
+                        "${if (b.evR >= 0) "+" else ""}${b.evR.f()}R por trade",
+                    if (b.evR >= 0.1) Fx.Buy else if (b.evR >= 0) Fx.Text else Fx.Warn,
+                )
+            }
             if (b.histN >= 8) {
                 PlanRow(
                     "Histórico", "${(b.histP * 100).toInt()}%",
@@ -390,7 +440,10 @@ fun BreakoutDetail(b: BreakoutItem) {
         if (b.cons.isNotEmpty()) SectionCard("Atenção") { Bullets(b.cons, Fx.Warn, 6) }
         SectionCard("Como ler") {
             Text(
-                "ROMPENDO AGORA: o preço passou do nível e o candle ainda não fechou. CONFIRMADO: um candle fechou além " +
+                "A probabilidade vem de um modelo calibrado em dezenas de milhares de rompimentos reconstituídos no " +
+                    "histórico (com spread): é a chance real de o alvo 1 vir antes do stop. A nota é relativa: " +
+                    "A+ = melhores 3% dos rompimentos, A = melhores 10%, B = 25%, C = 50%. " +
+                    "ROMPENDO AGORA (pré-alerta): o preço passou do nível e o candle ainda não fechou — o alerta sai no fechamento. CONFIRMADO: um candle fechou além " +
                     "do nível. RETESTE: depois de romper, o preço voltou ao nível e segurou. FALSO ROMPIMENTO: rompeu e " +
                     "fechou de volta — o trade é na direção contrária (armadilha). ESTICADO: o preço já se afastou demais; " +
                     "melhor esperar um reteste.",

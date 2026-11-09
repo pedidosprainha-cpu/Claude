@@ -15,6 +15,19 @@ data class BreakoutResult(
     val items: List<BreakoutItem>,
     val dataIssues: List<String>,
     val elapsedS: Double,
+    val model: ModelInfo? = null,
+)
+
+/** Out-of-sample validation of the probability model (from the historical replay). */
+data class ModelInfo(
+    val events: Int,
+    val periodFrom: String,
+    val periodTo: String,
+    val oldHit: Double,
+    val oldR: Double,
+    val newHit: Double,
+    val newR: Double,
+    val stopAtrH1: Double?,
 )
 
 data class BreakoutPlanUi(
@@ -36,6 +49,7 @@ data class BreakoutItem(
     val statusLabel: String,
     val extended: Boolean,
     val actionable: Boolean,
+    val blocked: Boolean,
     val headline: String,
     val level: String,
     val levelLabel: String,
@@ -49,6 +63,8 @@ data class BreakoutItem(
     val isNew: Boolean,
     val quality: Double,
     val grade: String,
+    val prob: Double?,          // calibrated P(target 1 before stop)
+    val evR: Double?,           // expected R of the plan
     val pros: List<String>,
     val cons: List<String>,
     val histN: Int,
@@ -81,11 +97,14 @@ private fun parseItem(o: JSONObject): BreakoutItem {
         id = o.s("id"), symbol = o.s("symbol"), name = o.s("name"), tf = o.s("tf"),
         direction = o.optInt("direction", 1), breakDir = o.optInt("break_dir", 1), side = o.s("side"),
         status = o.s("status"), statusLabel = o.s("status_label"), extended = o.optBoolean("extended"),
-        actionable = o.optBoolean("actionable"), headline = o.s("headline"), level = o.s("level"),
+        actionable = o.optBoolean("actionable"), blocked = o.optBoolean("blocked"),
+        headline = o.s("headline"), level = o.s("level"),
         levelLabel = o.s("level_label"), bid = o.s("bid"), ask = o.s("ask"),
         extPips = o.d("ext_pips"), extAtr = o.d("ext_atr"), brokeAt = o.s("broke_at"),
         firstSeen = o.s("first_seen"), ageMin = o.optInt("age_min"), isNew = o.optBoolean("is_new"),
         quality = o.d("quality"), grade = o.s("grade"),
+        prob = if (o.isNull("prob")) null else o.d("prob"),
+        evR = if (o.isNull("ev_r")) null else o.d("ev_r"),
         pros = o.optJSONArray("pros").strings(), cons = o.optJSONArray("cons").strings(),
         histN = h?.optInt("n") ?: 0, histWins = h?.optInt("wins") ?: 0, histP = h?.d("p") ?: 0.0,
         plan = BreakoutPlanUi(
@@ -110,6 +129,20 @@ fun parseBreakouts(raw: String): BreakoutOutput = try {
                 newCount = j.optInt("new_count"), newActionable = j.optInt("new_actionable"),
                 items = if (arr == null) emptyList() else List(arr.length()) { parseItem(arr.getJSONObject(it)) },
                 dataIssues = j.optJSONArray("data_issues").strings(), elapsedS = j.d("elapsed_s"),
+                model = j.optJSONObject("model")?.let { m ->
+                    val t = m.optJSONObject("test")
+                    val old = t?.optJSONObject("acionaveis_regra_antiga")
+                    val new = t?.optJSONObject("acionaveis_modelo_novo")
+                    val per = m.optJSONArray("period")
+                    val geo = m.optJSONObject("geometry")
+                    if (old == null || new == null) null else ModelInfo(
+                        events = m.optInt("events"),
+                        periodFrom = per?.optString(0)?.take(10) ?: "",
+                        periodTo = per?.optString(1)?.take(10) ?: "",
+                        oldHit = old.d("acerto"), oldR = old.d("r"), newHit = new.d("acerto"), newR = new.d("r"),
+                        stopAtrH1 = if (geo == null || geo.isNull("stop_atr_h1")) null else geo.d("stop_atr_h1"),
+                    )
+                },
             ),
             raw,
         )

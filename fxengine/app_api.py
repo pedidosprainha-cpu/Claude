@@ -192,7 +192,8 @@ def breakout_order_text(b: bk.Breakout) -> str:
         f"Alvo 1: {i.fmt(p.tp1)} ({p.rr1:.2f}R) - realizar 50% e stop na entrada",
         f"Alvo 2: {i.fmt(p.tp2)} ({p.rr2:.2f}R)",
         f"Lote: {p.lots:.2f} (risco US$ {p.risk_amount:,.2f})",
-    ])
+    ] + ([f"Probabilidade histórica do alvo 1: {b.prob * 100:.0f}% · expectativa {b.ev_r:+.2f}R"]
+         if b.prob is not None else []))
 
 
 def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
@@ -210,6 +211,7 @@ def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
         "status_label": bk.STATUS_LABEL[b.status],
         "extended": b.extended,
         "actionable": b.actionable,
+        "blocked": b.blocked,
         "headline": b.headline(),
         "level": i.fmt(b.level.price),
         "level_label": b.level.label,
@@ -225,6 +227,8 @@ def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
         "is_new": b.is_new,
         "quality": _num(b.quality, 1),
         "grade": b.grade,
+        "prob": _num(b.prob, 3),
+        "ev_r": _num(b.ev_r, 2),
         "pros": b.pros,
         "cons": b.cons,
         "hist": {"n": b.hist_n, "wins": b.hist_wins, "p": _num(b.hist_p, 3)} if b.hist_n >= 8 else None,
@@ -240,6 +244,7 @@ def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
 
 def breakouts_result_dict(r: bk.BreakoutScan, tz_name: str = "America/Sao_Paulo", elapsed: float = 0.0) -> dict:
     tz = ZoneInfo(tz_name)
+    model = bk.load_model()
     loc = r.now.astimezone(tz)
     issues = [f"{k}: {v}" for k, v in {**r.status, **r.errors}.items() if v not in ("ok", "sintético")]
     if r.closed:
@@ -255,7 +260,11 @@ def breakouts_result_dict(r: bk.BreakoutScan, tz_name: str = "America/Sao_Paulo"
         "scanned": r.scanned,
         "new_count": r.new_count,
         "new_actionable": sum(1 for b in r.breakouts if b.is_new and b.actionable),
+        "new_unblocked": sum(1 for b in r.breakouts if b.is_new and not b.blocked),
         "breakouts": items,
+        "model": None if model is None else {
+            "events": model.info.get("events"), "period": model.info.get("period"),
+            "test": model.info.get("test"), "geometry": model.geometry},
         "data_issues": issues,
         "elapsed_s": _num(elapsed, 1),
     }

@@ -80,7 +80,9 @@ object Notifications {
         if (!canPost(ctx)) return
         val arrow = if (b.isBuy) "▲" else "▼"
         val title = "$arrow ${b.side} ${b.symbol} · ${b.statusLabel.lowercase()} (${b.tf}) · nota ${b.grade}"
-        val body = "${b.headline}\nEntrada ${b.plan.entry} · stop ${b.plan.sl} · alvo ${b.plan.tp1} (${"%.1f".format(b.plan.rr1)}R)"
+        val odds = if (b.prob != null && b.evR != null)
+            "\nAlvo 1 antes do stop: ${(b.prob * 100).toInt()}% · expectativa ${"%+.2f".format(b.evR)}R" else ""
+        val body = "${b.headline}\nEntrada ${b.plan.entry} · stop ${b.plan.sl} · alvo ${b.plan.tp1} (${"%.1f".format(b.plan.rr1)}R)$odds"
         val n = NotificationCompat.Builder(ctx, CH_ALERTS)
             .setSmallIcon(R.drawable.ic_stat_breakout)
             .setContentTitle(title)

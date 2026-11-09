@@ -65,16 +65,16 @@ class MonitorService : Service() {
             val res = BreakoutMonitor.scanOnce(this)
             if (res != null) {
                 res.items
-                    .filter { it.isNew && it.actionable && gradeAtLeast(it.grade, settings.alertMinGrade) }
+                    .filter { it.isNew && !it.blocked && gradeAtLeast(it.grade, settings.alertMinGrade) }
                     .take(5)
                     .forEach { Notifications.alert(this, it) }
             }
             val next = System.currentTimeMillis() + interval
             BreakoutMonitor.setNext(next)
             val st = BreakoutMonitor.state.value
-            val actionable = st.result?.items?.count { it.actionable } ?: 0
+            val actionable = st.result?.items?.count { it.actionable } ?: 0   // grade A or better
             val text = if (st.error != null && res == null) "Falha no último ciclo: ${st.error} · nova tentativa às ${hhmm.format(Date(next))}"
-            else "Último ciclo ${hhmm.format(Date())} · $actionable acionáveis · próximo às ${hhmm.format(Date(next))}"
+            else "Último ciclo ${hhmm.format(Date())} · $actionable com nota A/A+ · próximo às ${hhmm.format(Date(next))}"
             Notifications.updateOngoing(this, text)
             delay(interval)
         }

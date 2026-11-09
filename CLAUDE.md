@@ -12,3 +12,6 @@ Motor de análise gráfica, quantitativa e fundamentalista de Forex (28 pares) e
   `fxengine/app_api.py`. Mudou a saída do motor? Mantenha `app_api.result_dict` e
   `android/.../data/Models.kt` em sincronia. Build: `cd android && ./gradlew assembleRelease`.
 - `analysis/` contém análises manuais antigas (anteriores ao motor).
+- `research/`: reconstituição histórica e treino do modelo de probabilidade dos rompimentos
+  (`fxengine/data/breakout_model.json`). Mudou as features em `breakouts.py`? Rode de novo
+  `research/breakout_replay.py` e `research/train_breakout_model.py` e reporte os números do teste.

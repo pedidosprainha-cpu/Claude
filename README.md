@@ -133,6 +133,20 @@ A nota (0–100) soma vários fatores:
 - eventos de alto impacto, liquidez da sessão e spread em relação ao stop;
 - taxa histórica de continuação de rompimentos naquele ativo e timeframe.
 
+**Precisão validada.** O detector foi reconstituído no histórico: cerca de 26 mil alertas em
+~2,5 meses, sem olhar o futuro e com spread. Um modelo logístico calibrado sobre as features
+de cada alerta dá a probabilidade real de o alvo 1 vir antes do stop.
+
+- A geometria do trade (stop ≥ 1,5 ATR do H1) e os cortes de nota foram escolhidos por
+  validação walk-forward.
+- No período de teste, que o modelo não viu, os melhores (A/A+) atingiram o alvo 1 em **53%**
+  das vezes, contra **30%** da regra anterior.
+- A expectativa melhorou de −0,14R para −0,02R por trade: ainda ≈ zero depois do spread.
+  Os alertas servem como oportunidade a confirmar, não como sinal automático.
+
+Detalhes em [`research/RESULTADOS_ROMPIMENTOS.md`](research/RESULTADOS_ROMPIMENTOS.md);
+como retreinar em [`research/README.md`](research/README.md).
+
 O plano tem stop do outro lado do nível, alvos na próxima zona e na projeção da altura do
 range, e lote pelo risco escolhido. Um rastreador em disco lembra os eventos já vistos, para
 que o monitor só avise o que é novo.

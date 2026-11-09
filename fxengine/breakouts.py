@@ -112,7 +112,13 @@ class Breakout:
     hist_wins: int = 0
     first_seen: datetime | None = None
     is_new: bool = False
-    actionable: bool = False     # worth acting on now (quality, spread, events, extension)
+    actionable: bool = False     # top tier (grade A or better) and not blocked
+    blocked: bool = False        # extended, spread > 30% of the stop or high-impact event window
+    features: dict = field(default_factory=dict)   # model inputs (see FEATURES)
+    heuristic: float = 0.0       # rule-based score, kept for reference/comparison
+    prob: float | None = None    # calibrated P(target 1 before stop), when a model is loaded
+    ev_r: float | None = None    # expected R of the plan = prob*rr1 - (1-prob)
+    spread_ratio: float = 0.0
 
     @property
     def symbol(self) -> str:
@@ -272,13 +278,25 @@ def classify(level: Level, closed: pd.DataFrame, forming, price: float, a: float
 # ---------------------------------------------------------------------------- detection
 
 def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, float],
-           strength: strength_mod.StrengthResult | None, events: list, sess) -> list[Breakout]:
+           strength, events: list, sess, cache: dict | None = None,
+           model: "BreakoutModel | None" = None) -> list[Breakout]:
+    """Find breakouts for one instrument.
+
+    `cache` lets a caller (the historical replay) reuse slow, hour-level work
+    (S/R zones, higher-timeframe views) across consecutive M15 steps.
+    `model` defaults to the shipped calibrated model (fxengine/data/breakout_model.json).
+    """
     inst, frames = data.inst, data.frames
+    cache = {} if cache is None else cache
+    model = load_model() if model is None else model
     out: list[Breakout] = []
     h1 = frames.get("H1")
-    zones = None
-    if h1 is not None and len(h1) > 30:
-        zones = level_map(frames, data.price, inst.round_step, float(ta.atr(h1).iloc[-1]))
+    if "zones" not in cache:
+        cache["zones"] = (level_map(frames, data.price, inst.round_step, float(ta.atr(h1).iloc[-1]))
+                          if h1 is not None and len(h1) > 30 else None)
+    zones = cache["zones"]
+    if "atr_h1" not in cache:
+        cache["atr_h1"] = float(ta.atr(h1).iloc[-1]) if h1 is not None and len(h1) > 30 else None
     for tf, sp in TF_SPEC.items():
         df = frames.get(tf)
         if df is None or len(df) < 80:
@@ -287,13 +305,19 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
         a = float(ta.atr(closed).iloc[-1])
         if not np.isfinite(a) or a <= 0:
             continue
-        htf = analyze_tf(sp["htf"], frames.get(sp["htf"]))
+        key = "htf:" + sp["htf"]
+        if key not in cache:
+            cache[key] = analyze_tf(sp["htf"], frames.get(sp["htf"]))
+        htf = cache[key]
         bb_l, bb_m, bb_u = ta.bollinger(closed.c)
         bbw = ((bb_u - bb_l) / bb_m).iloc[-200:]
+        tf_ctx = None
         for lv in candidate_levels(tf, closed, zones, data.price, a, now):
             res = classify(lv, closed, forming, data.price, a, sp["recent"], sp["pre"])
             if res is None:
                 continue
+            if tf_ctx is None:
+                tf_ctx = _tf_context(closed, a)
             status, bd, j, extreme = res
             td = -bd if status == "falso" else bd
             ext = bd * (data.price - lv.price) / a
@@ -302,9 +326,11 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
             b = Breakout(inst, tf, td, bd, status, run > 2.2, lv, data.price,
                          data.bid, data.ask, a, ext, max(len(closed) - 1 - j, 0) if j < len(closed) else 0, idx)
             _score(b, closed, forming, j, bbw, htf, strength, events, sess, now)
-            atr_h1 = float(ta.atr(h1).iloc[-1]) if h1 is not None and len(h1) > 30 else a
-            b.plan = _plan(b, extreme, zones, s, prices, atr_h1)
+            atr_h1 = cache["atr_h1"] or a
+            geo = model.geometry if (model is not None and not model.info.get("disabled")) else None
+            b.plan = _plan(b, extreme, zones, s, prices, atr_h1, geo)
             spread_ratio = (data.ask - data.bid) / (b.plan.sl_pips * inst.pip) if b.plan.sl_pips > 0 else 1.0
+            b.spread_ratio = spread_ratio
             if spread_ratio > 0.3:
                 b.quality -= 20
                 b.cons.append(f"spread consome {spread_ratio * 100:.0f}% do stop — evitar")
@@ -320,11 +346,10 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
                     elif b.hist_p <= 0.42:
                         b.quality -= 5
                         b.cons.append(f"rompimentos neste ativo/TF costumam falhar ({b.hist_wins}/{b.hist_n} seguiram)")
-            b.quality = float(np.clip(b.quality, 0, 100))
-            b.grade = grade(b.quality)
+            b.features = _features(b, closed, j, bbw, htf, strength, sess, zones, tf_ctx, sp)
+            b.heuristic = float(np.clip(b.quality, 0, 100))
             event_block = any(c.startswith("evento de alto impacto") for c in b.cons)
-            b.actionable = (b.quality >= s.min_score and not b.extended and spread_ratio <= 0.3
-                            and not event_block)
+            _finalize(b, model, s, event_block)
             out.append(b)
     # one event per level across timeframes: keep the best-scored one
     kept: list[Breakout] = []
@@ -333,6 +358,171 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
                    and abs(k.level.price - b.level.price) <= 0.5 * max(k.atr, b.atr) for k in kept):
             kept.append(b)
     return kept
+
+
+# ---------------------------------------------------------------------------- features / model
+
+FEATURES = [
+    "tf_h1", "st_reteste", "st_falso", "st_rompendo", "kind_box", "kind_session", "kind_zone",
+    "lvl_strength", "n_refs", "ref_daily", "ext_atr", "run_atr", "bars_since", "bbw_pct",
+    "brk_body", "brk_range", "brk_clv", "htf_trend", "htf_mom", "strength_dir", "liq",
+    "sess_asia", "sess_overlap", "spread_ratio", "rr1", "room_atr", "touches", "approach",
+    "adx", "atr_pct", "hist_p", "is_metal", "is_long",
+]
+
+
+def _tf_context(closed: pd.DataFrame, a: float) -> dict:
+    adx = float(ta.adx(closed)[0].iloc[-1])
+    atr_s = ta.atr(closed).iloc[-300:]
+    atr_pct = float(atr_s.rank(pct=True).iloc[-1]) if atr_s.notna().sum() > 30 else 0.5
+    return {"adx": adx if np.isfinite(adx) else 20.0, "atr_pct": atr_pct}
+
+
+def _features(b: Breakout, closed: pd.DataFrame, j: int, bbw, htf, strength, sess, zones,
+              tf_ctx: dict, sp: dict) -> dict:
+    a, td, bd, L = b.atr, b.direction, b.break_dir, b.level.price
+    n, R, pre = len(closed), sp["recent"], sp["pre"]
+    c, h, l = closed.c.to_numpy(), closed.h.to_numpy(), closed.l.to_numpy()
+    k = min(j, n - 1)
+    rng = float(h[k] - l[k])
+    body = abs(float(c[k] - closed.o.iloc[k]))
+    clv = ((c[k] - l[k]) / rng if bd == 1 else (h[k] - c[k]) / rng) if rng > 0 else 0.5
+    pos = n - 1 - min(max(j - 1, 0), n - 1)
+    bbw_pct = float(bbw.rank(pct=True).iloc[-1 - pos]) if len(bbw) > 30 and pos < len(bbw) else 0.5
+    win = slice(max(n - R - pre, 0), n - R)
+    ext_arr = h[win] if bd == 1 else l[win]
+    touches = int(np.sum(np.abs(ext_arr - L) <= 0.15 * a))
+    approach = bd * (c[n - R - 1] - c[max(n - R - pre, 0)]) / (a * np.sqrt(pre)) if n > R + pre else 0.0
+    room = 5.0
+    if zones is not None:
+        opp = zones.above(b.price) if td == 1 else zones.below(b.price)
+        far = [td * (z.price - b.price) / a for z in opp if td * (z.price - b.price) > 0.25 * a]
+        room = min(far[0], 5.0) if far else 5.0
+    ps = strength.pair_score(b.inst.base, b.inst.quote) * td / 100 if (strength is not None and not b.inst.is_metal) else 0.0
+    active = set(sess.active)
+    labels = set(b.level.labels)
+    return {
+        "tf_h1": float(b.tf == "H1"),
+        "st_reteste": float(b.status == "reteste"),
+        "st_falso": float(b.status == "falso"),
+        "st_rompendo": float(b.status == "rompendo"),
+        "kind_box": float(b.level.kind == "box"),
+        "kind_session": float(b.level.kind == "session"),
+        "kind_zone": float(b.level.kind == "zone"),
+        "lvl_strength": min(b.level.strength, 10.0) / 10,
+        "n_refs": min(len(labels), 5) / 5,
+        "ref_daily": float(any(("dia anterior" in x) or ("semana anterior" in x) for x in labels)),
+        "ext_atr": float(np.clip(b.ext_atr, -3, 3)),
+        "run_atr": float(np.clip(td * (b.price - L) / a, -3, 4)),
+        "bars_since": min(b.bars_since, R) / R,
+        "bbw_pct": bbw_pct,
+        "brk_body": body / rng if rng > 0 else 0.0,
+        "brk_range": float(np.clip(rng / a, 0, 4)),
+        "brk_clv": float(clv),
+        "htf_trend": float(htf.trend * td) if htf is not None else 0.0,
+        "htf_mom": float(htf.momentum * td) if htf is not None else 0.0,
+        "strength_dir": float(ps),
+        "liq": sessions.liquidity_factor(sess, b.inst.base, b.inst.quote, b.inst.is_metal)[0],
+        "sess_asia": float(bool(active) and not (active & {"Londres", "Nova York"})),
+        "sess_overlap": float({"Londres", "Nova York"} <= active),
+        "spread_ratio": float(min(b.spread_ratio, 1.0)),
+        "rr1": float(min(b.plan.rr1, 4.0)),
+        "room_atr": float(room),
+        "touches": min(touches, 6) / 6,
+        "approach": float(np.clip(approach, -3, 3)),
+        "adx": tf_ctx["adx"] / 50,
+        "atr_pct": tf_ctx["atr_pct"],
+        "hist_p": b.hist_p if b.hist_n >= 8 else 0.5,
+        "is_metal": float(b.inst.is_metal),
+        "is_long": float(td == 1),
+    }
+
+
+@dataclass
+class BreakoutModel:
+    """Logistic model P(target 1 before stop) trained on the historical replay (research/)."""
+    features: list[str]
+    mean: np.ndarray
+    std: np.ndarray
+    coef: np.ndarray
+    intercept: float
+    ev_grades: list[tuple[float, str]]     # (min expected R, grade), best first
+    ev_actionable: float                   # minimum expected R to be actionable
+    p_actionable: float                    # minimum probability to be actionable
+    info: dict
+    geometry: dict = field(default_factory=dict)   # {"stop_atr_h1": k | None, "tp1_r": m | None}
+    exclude_status: list = field(default_factory=list)  # statuses that lost money in validation
+    exclude_metals: bool = False
+
+    def prob(self, feats: dict) -> float:
+        x = np.array([derived_value(f, feats) for f in self.features], dtype=float)
+        z = (x - self.mean) / self.std
+        return float(1 / (1 + np.exp(-(z @ self.coef + self.intercept))))
+
+
+def derived_value(name: str, feats: dict) -> float:
+    """Feature value by name; supports squares ("x^2") and interactions ("a*b")."""
+    if name.endswith("^2"):
+        v = feats.get(name[:-2], 0.0)
+        return v * v
+    if "*" in name:
+        a, b = name.split("*", 1)
+        return feats.get(a, 0.0) * feats.get(b, 0.0)
+    return feats.get(name, 0.0)
+
+
+_MODEL_CACHE: dict = {}
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "data", "breakout_model.json")
+
+
+def load_model(path: str = MODEL_PATH) -> BreakoutModel | None:
+    if path in _MODEL_CACHE:
+        return _MODEL_CACHE[path]
+    m = None
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        m = BreakoutModel(d["features"], np.array(d["mean"]), np.array(d["std"]), np.array(d["coef"]),
+                          float(d["intercept"]), [(float(t), g) for t, g in d["ev_grades"]],
+                          float(d["ev_actionable"]), float(d["p_actionable"]), d.get("info", {}),
+                          d.get("geometry") or {}, list(d.get("exclude_status") or []),
+                          bool(d.get("exclude_metals", False)))
+    except (OSError, ValueError, KeyError):
+        m = None
+    _MODEL_CACHE[path] = m
+    return m
+
+
+NO_MODEL = BreakoutModel([], np.zeros(0), np.ones(0), np.zeros(0), 0.0, [], 0.0, 0.0, {"disabled": True})
+
+
+def _finalize(b: Breakout, model: BreakoutModel | None, s: Settings, event_block: bool) -> None:
+    """Turn features into probability, expected R, grade and the actionable flag."""
+    hard_block = event_block or b.extended or b.spread_ratio > 0.3
+    b.blocked = hard_block
+    early = b.status == "rompendo" and b.tf == "M15"     # never seen by the model: pre-alert only
+    if model is None or model.info.get("disabled"):
+        b.quality = b.heuristic
+        b.grade = grade(b.quality)
+        b.actionable = b.quality >= s.min_score and not hard_block and b.status != "rompendo"
+        return
+    p = model.prob(b.features)
+    b.prob = p
+    b.ev_r = p * b.plan.rr1 - (1 - p)
+    b.quality = round(p * 100, 1)
+    b.grade = next((g for t, g in model.ev_grades if b.ev_r >= t), "D")
+    eligible = b.status not in model.exclude_status and not (b.inst.is_metal and model.exclude_metals)
+    if not eligible and b.grade in ("A+", "A"):
+        b.grade = "B"
+    b.actionable = (eligible and b.ev_r >= model.ev_actionable and p >= model.p_actionable
+                    and not hard_block and not early)
+    if early:
+        b.blocked = True
+        b.cons.append("pré-alerta: o alerta sai quando o candle M15 fechar além do nível")
+    elif b.status in model.exclude_status:
+        b.cons.append("no histórico este tipo de sinal perdeu dinheiro: só informativo, sem alerta")
+    elif b.inst.is_metal and model.exclude_metals:
+        b.cons.append("rompimentos em metais não tiveram expectativa positiva no histórico: só informativo")
 
 
 def _score(b: Breakout, closed, forming, j, bbw, htf, strength, events, sess, now) -> None:
@@ -428,7 +618,8 @@ def _score(b: Breakout, closed, forming, j, bbw, htf, strength, events, sess, no
     b.quality = q
 
 
-def _plan(b: Breakout, extreme: float, zones, s: Settings, prices: dict, atr_h1: float) -> BreakoutPlan:
+def _plan(b: Breakout, extreme: float, zones, s: Settings, prices: dict, atr_h1: float,
+          geo: dict | None = None) -> BreakoutPlan:
     inst, a, td, L = b.inst, b.atr, b.direction, b.level.price
     entry = b.ask if td == 1 else b.bid
     spread = max(b.ask - b.bid, 0.0)
@@ -444,6 +635,11 @@ def _plan(b: Breakout, extreme: float, zones, s: Settings, prices: dict, atr_h1:
         sl_dist = min_d
         sl = entry - td * sl_dist
         sl_basis += " · ampliado para a distância mínima (volatilidade/spread)"
+    k_sl = (geo or {}).get("stop_atr_h1")
+    if k_sl and sl_dist < k_sl * atr_h1:
+        sl_dist = k_sl * atr_h1
+        sl = entry - td * sl_dist
+        sl_basis += f" · {k_sl:g} ATR H1 (geometria validada no histórico)"
 
     targets = [] if zones is None else (zones.above(entry) if td == 1 else zones.below(entry))
     front = 0.1 * a
@@ -455,7 +651,10 @@ def _plan(b: Breakout, extreme: float, zones, s: Settings, prices: dict, atr_h1:
                 tp1_dist, tp1_basis = dist, f"antes da zona {inst.fmt(z.price)} ({z.label()})"
             break
     if tp1_dist is None:
-        tp1_dist, tp1_basis = 1.5 * sl_dist, "1.5R"
+        tp1_dist, tp1_basis = 1.5 * sl_dist, "sem zona relevante antes"
+    k_tp = (geo or {}).get("tp1_r")
+    if k_tp:
+        tp1_dist, tp1_basis = k_tp * sl_dist, f"{k_tp:g}R (geometria validada no histórico)"
     tp2_dist, tp2_basis = None, ""
     if b.status == "falso":
         if b.level.height:
@@ -467,7 +666,7 @@ def _plan(b: Breakout, extreme: float, zones, s: Settings, prices: dict, atr_h1:
         if tp1_dist + 0.5 * sl_dist <= dist <= 5 * sl_dist:
             tp2_dist, tp2_basis = dist, f"projeção da altura do range ({inst.pips(b.level.height):.0f} pips)"
     if tp2_dist is None:
-        tp2_dist, tp2_basis = max(2.5 * sl_dist, tp1_dist + 0.8 * sl_dist), "2.5R"
+        tp2_dist, tp2_basis = max(2.5 * sl_dist, tp1_dist + 0.8 * sl_dist), "extensão"
     lots, risk_amount, _ = position_size(inst, sl_dist, s.balance, s.risk_pct, prices, s.account_ccy)
     return BreakoutPlan(entry, sl, entry + td * tp1_dist, entry + td * tp2_dist, inst.pips(sl_dist),
                         inst.pips(tp1_dist), inst.pips(tp2_dist), tp1_dist / sl_dist, tp2_dist / sl_dist,
@@ -563,7 +762,8 @@ def scan(provider, s: Settings, spec: str | None, now: datetime, state_path: str
             found += detect(d, now, s, prices, strength, ctx.events, sess)
         except Exception as e:  # noqa: BLE001 - one instrument must not break the monitor
             errors[inst.symbol] = f"erro na detecção: {e}"
-    found.sort(key=lambda b: (b.quality, -b.bars_since), reverse=True)
+    found.sort(key=lambda b: (b.actionable, b.ev_r if b.ev_r is not None else b.quality / 100 - 0.5,
+                              -b.bars_since), reverse=True)
     new = Tracker(state_path).mark(found, now)
     step(100, "Concluído")
     return BreakoutScan(now, sess, found, len(targets), closed, new, ctx.status, errors)

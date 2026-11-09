@@ -139,3 +139,66 @@ def test_scan_breakouts_api_offline(tmp_path):
 @pytest.mark.parametrize("status", ["rompendo", "confirmado", "reteste", "falso"])
 def test_status_labels_exist(status):
     assert bk.STATUS_LABEL[status]
+
+
+def test_derived_feature_values():
+    f = {"ext_atr": 2.0, "st_falso": 1.0, "htf_trend": -0.5}
+    assert bk.derived_value("ext_atr^2", f) == 4.0
+    assert bk.derived_value("st_falso*htf_trend", f) == -0.5
+    assert bk.derived_value("missing", f) == 0.0
+
+
+def test_model_sets_probability_and_grade(tmp_path):
+    names = list(bk.FEATURES) + ["ext_atr^2"]
+    coef = [0.0] * len(names)
+    coef[names.index("htf_trend")] = 1.0
+    model_file = tmp_path / "m.json"
+    model_file.write_text(json.dumps({
+        "features": names, "mean": [0.0] * len(names), "std": [1.0] * len(names), "coef": coef,
+        "intercept": 0.0, "ev_grades": [[0.3, "A+"], [0.2, "A"], [0.1, "B"], [0.0, "C"]],
+        "ev_actionable": 0.1, "p_actionable": 0.0, "info": {"events": 1}}))
+    model = bk.load_model(str(model_file))
+    assert model is not None and 0 < model.prob({"htf_trend": 0.5}) < 1
+    c = ranging()
+    c[-4:] = [1.1016, 1.1022, 1.1026, 1.1029]
+    data = _instrument_data(c)
+    now = (data.frames["M15"].index[-1] + timedelta(minutes=15, seconds=5)).to_pydatetime()
+    out = bk.detect(data, now, Settings(), {"EURUSD": data.price}, None, [], sessions.state(now), model=model)
+    assert out
+    for b in out:
+        assert b.prob is not None and 0 < b.prob < 1
+        assert b.ev_r == pytest.approx(b.prob * b.plan.rr1 - (1 - b.prob))
+        assert b.quality == pytest.approx(round(b.prob * 100, 1))
+        if b.status == "rompendo":
+            assert not b.actionable
+
+
+def test_missing_model_falls_back_to_rules(tmp_path):
+    assert bk.load_model(str(tmp_path / "nope.json")) is None
+    c = ranging()
+    c[-4:] = [1.1016, 1.1022, 1.1026, 1.1029]
+    data = _instrument_data(c)
+    now = (data.frames["M15"].index[-1] + timedelta(minutes=15, seconds=5)).to_pydatetime()
+    out = bk.detect(data, now, Settings(), {"EURUSD": data.price}, None, [], sessions.state(now), model=bk.NO_MODEL)
+    assert out and all(b.prob is None and b.quality == b.heuristic for b in out)
+
+
+def test_model_geometry_drives_the_plan(tmp_path):
+    names = list(bk.FEATURES)
+    model_file = tmp_path / "g.json"
+    model_file.write_text(json.dumps({
+        "features": names, "mean": [0.0] * len(names), "std": [1.0] * len(names), "coef": [0.0] * len(names),
+        "intercept": 0.0, "ev_grades": [[0.0, "C"]], "ev_actionable": 0.1, "p_actionable": 0.0,
+        "geometry": {"stop_atr_h1": 1.0, "tp1_r": 2.0}, "info": {}}))
+    model = bk.load_model(str(model_file))
+    c = ranging()
+    c[-4:] = [1.1016, 1.1022, 1.1026, 1.1029]
+    data = _instrument_data(c)
+    now = (data.frames["M15"].index[-1] + timedelta(minutes=15, seconds=5)).to_pydatetime()
+    atr_h1 = float(ta.atr(data.frames["H1"]).iloc[-1])
+    out = bk.detect(data, now, Settings(), {"EURUSD": data.price}, None, [], sessions.state(now), model=model)
+    assert out
+    for b in out:
+        sl_dist = abs(b.plan.entry - b.plan.sl)
+        assert sl_dist >= atr_h1 - 1e-9
+        assert b.plan.rr1 == pytest.approx(2.0)

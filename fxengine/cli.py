@@ -90,15 +90,18 @@ def render_breakouts(r, min_grade: str = "B", only_new: bool = False) -> str:
             and (b.is_new or not only_new)]
     head = (f"ROMPIMENTOS · {r.now:%d/%m %H:%M:%S} UTC · {r.session.label} · {r.scanned} ativos · "
             f"{len(r.breakouts)} eventos ({r.new_count} novos)")
-    lines = [head, "-" * len(head)]
+    lines = [head, "★ = melhores do modelo (A/A+) · x = bloqueado (esticado, spread alto, evento ou pré-alerta)",
+             "-" * len(head)]
     if not keep:
         lines.append(f"  nenhum rompimento com nota ≥ {min_grade}" + (" novo" if only_new else ""))
     for b in keep:
         p, i = b.plan, b.inst
         flag = "NOVO " if b.is_new else "     "
-        act = "✔" if b.actionable else "·"
+        act = "★" if b.actionable else ("·" if not b.blocked else "x")
+        score = (f"P(alvo1) {b.prob * 100:3.0f}% · {b.ev_r:+.2f}R" if b.prob is not None
+                 else f"nota ({b.quality:4.0f})")
         lines.append(f" {act} {flag}{b.symbol:<7} {b.tf:<3} {b.side:<6} {STATUS_LABEL[b.status]:<17} "
-                     f"nota {b.grade:<2} ({b.quality:4.0f})  nível {i.fmt(b.level.price)} [{b.level.label[:48]}]")
+                     f"{b.grade:<2} {score}  nível {i.fmt(b.level.price)} [{b.level.label[:44]}]")
         lines.append(f"         entrada {i.fmt(p.entry)}  stop {i.fmt(p.sl)}  alvo1 {i.fmt(p.tp1)} ({p.rr1:.1f}R)  "
                      f"alvo2 {i.fmt(p.tp2)} ({p.rr2:.1f}R)  lote {p.lots:.2f}")
         if b.cons:
