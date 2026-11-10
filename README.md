@@ -27,7 +27,8 @@ Rompimentos (breakouts) em tempo real:
 
 ```bash
 python3 -m fxengine rompimentos                     # varredura única (nota ≥ B)
-python3 -m fxengine rompimentos --monitorar 120     # repete a cada 2 min e avisa os novos
+python3 -m fxengine rompimentos --monitorar 120     # repete a cada 2 min e avisa os novos/confirmados
+python3 -m fxengine rompimentos --plano limite      # plano com ordem limite no reteste
 python3 -m fxengine rompimentos -a metais --min-nota A
 ```
 
@@ -133,29 +134,28 @@ A nota (0–100) soma vários fatores:
 - eventos de alto impacto, liquidez da sessão e spread em relação ao stop;
 - taxa histórica de continuação de rompimentos naquele ativo e timeframe.
 
-**Precisão validada e plano de entrada.** O detector foi reconstituído no histórico, sem olhar
-o futuro e com spread: cerca de **100 mil rompimentos H1 em ~3 anos** e 26 mil M15 em ~2
-meses. Um laboratório testou 112 combinações de entrada, stop e saída. Um modelo calibrado por
-timeframe ordena os alertas.
+**Precisão validada e planos de entrada.** O detector foi reconstituído no histórico, sem olhar
+o futuro e com spread: cerca de **100 mil rompimentos H1 em ~3 anos** e 26 mil M15 em ~2 meses.
+Foram testadas 112 combinações de entrada, stop e saída e modelos linear e não linear (GBM).
+O app oferece dois planos para os 10% melhores alertas H1 (nota A/A+):
 
-Plano escolhido por walk-forward:
+| plano | como entra | trades no lucro (teste) | R médio no teste | R médio walk-forward |
+|---|---|---|---|---|
+| **A mercado (tempo real)** — padrão | alerta quando o candle seguinte fecha a favor; entrada a mercado na hora; stop 0,5 ATR H1 além do nível | **49,5%** | +0,037 | −0,005 |
+| **Limite no reteste** | ordem limite no nível rompido; stop 1 ATR H1 além do nível | 57,6% | **+0,102** | **+0,080** (5/5 blocos +) |
+| referência: app 1.2 (a mercado, sem filtro) | — | 29,5% | −0,151 | — |
 
-- **Entrada:** ordem limite no reteste do nível rompido (válida por 6h no H1).
-- **Stop:** 1 ATR do H1 além do nível.
-- **Saída:** a partir de +1R, stop móvel 1 ATR atrás do melhor preço, sem alvo fixo.
+Nos dois planos, a partir de +1R o stop vira móvel (1 ATR H1 atrás do melhor preço).
 
-Resultado dos 10% melhores alertas H1 (nota A/A+):
+- O plano **a mercado** quase dobra a assertividade do app 1.2 e elimina a perda média. Mesmo
+  assim, a expectativa histórica é ≈ zero: rompimento comprado a mercado não teve vantagem
+  robusta depois do spread, mesmo com contexto e modelo não linear.
+- O único plano com resultado positivo validado é o **limite no reteste**, porque entra a um
+  preço melhor.
+- Rompimentos M15 não passaram na validação em nenhum plano e aparecem só como informação.
 
-| | trades | no lucro | R médio por trade |
-|---|---|---|---|
-| walk-forward (5 blocos de ~3,6 meses) | 5.698 | – | **+0,080** (5 de 5 blocos positivos) |
-| teste final (últimos ~3,6 meses, intocado) | 920 | **57,6%** | **+0,102** |
-| plano anterior (app 1.2), mesmo período | 13.721 | 29,5% | −0,151 |
-
-Os rompimentos M15 não passaram na validação: walk-forward negativo em todos os blocos. Eles
-aparecem só como informação, sem nota A nem alerta. Detalhes em
-`research/RESULTADOS_ENTRADAS.json`; como refazer em [`research/README.md`](research/README.md).
-É desempenho histórico, simulado com spreads típicos: não garante resultado futuro.
+Detalhes em `research/RESULTADOS_ENTRADAS*.json`; como refazer em
+[`research/README.md`](research/README.md).
 
 O plano tem stop do outro lado do nível, alvos na próxima zona e na projeção da altura do
 range, e lote pelo risco escolhido. Um rastreador em disco lembra os eventos já vistos, para

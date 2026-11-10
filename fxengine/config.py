@@ -32,6 +32,9 @@ class Settings:
     })
     min_score: float = 45.0            # below this: "sem trade" (grade C/D)
 
+    # --- breakout monitor --------------------------------------------------------
+    breakout_plan: str = "mercado"     # mercado (real-time market entry) | limite (limit on retest)
+
     # --- execution gates ------------------------------------------------------
     event_block_before_min: int = 45   # high-impact event this close ahead -> block
     event_block_after_min: int = 20    # ... or this recently released -> block

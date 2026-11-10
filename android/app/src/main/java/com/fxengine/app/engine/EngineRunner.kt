@@ -65,6 +65,8 @@ class EngineRunner(context: Context) {
             settings.assets,
             TZ,
             LambdaProgressListener(onProgress),
+            false,
+            settings.breakoutPlan,
         ).toString()
 
     companion object {

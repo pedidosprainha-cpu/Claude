@@ -29,15 +29,32 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from gbm import GBM  # noqa: E402
 from train_breakout_model import auc, design, fit_logreg, logloss, predict  # noqa: E402
 
 from fxengine.breakouts import EXIT_CFG, FEATURES, MODEL_PATH  # noqa: E402
 
 EXCLUDE = {"is_long"}
 DERIVED = ["ext_atr^2", "run_atr^2", "approach^2", "st_falso*htf_trend", "st_falso*strength_dir",
-           "st_reteste*htf_trend", "is_metal*htf_trend", "kind_box*bbw_pct", "sess_asia*brk_range"]
-FILTERS = (0.10, 0.25, 0.50, 1.00)        # share of best-ranked alerts kept
+           "st_reteste*htf_trend", "is_metal*htf_trend", "kind_box*bbw_pct", "sess_asia*brk_range",
+           "adr_used^2", "day_pos^2", "move_today^2", "st_falso*d1_trend", "st_falso*day_pos",
+           "st_falso*adr_used", "h_london*brk_range", "h_ny*brk_range", "d1_trend*htf_trend"]
+FILTERS = (0.05, 0.10, 0.25, 0.50, 1.00)  # share of best-ranked alerts kept
 LAMS = (10, 30, 100, 300, 1000)
+GBM_GRID = ({"depth": 2, "min_leaf": 600, "n_trees": 150, "lr": 0.05},
+            {"depth": 3, "min_leaf": 400, "n_trees": 150, "lr": 0.05})
+MODEL_TYPE = "logit"                     # set by --model
+
+
+def fit_predict(param, Xtr, ytr, Xte):
+    """Return (predict function on Xte, fitted object) for the current MODEL_TYPE."""
+    if MODEL_TYPE == "gbm":
+        m = GBM(**param).fit(Xtr, ytr)
+        return m.predict(Xte), m
+    mu, sd = Xtr.mean(0), Xtr.std(0)
+    sd[sd < 1e-9] = 1.0
+    w = fit_logreg((Xtr - mu) / sd, ytr, param)
+    return predict(w, (Xte - mu) / sd), (w, mu, sd)
 
 
 def prepare(events: str, sim: str, n_blocks: int) -> pd.DataFrame:
@@ -72,15 +89,13 @@ def walk_forward(g: pd.DataFrame, names: list[str], n_blocks: int):
     y = g.y.to_numpy(float)
     b = g.block.to_numpy()
     best = None
-    for lam in LAMS:
+    for lam in (GBM_GRID if MODEL_TYPE == "gbm" else LAMS):
         oos = np.full(len(g), np.nan)
         for k in range(1, n_blocks - 1):
             tr, te = b < k, b == k
             if tr.sum() < 200 or te.sum() == 0:
                 continue
-            mu, sd = X[tr].mean(0), X[tr].std(0)
-            sd[sd < 1e-9] = 1.0
-            oos[te] = predict(fit_logreg((X[tr] - mu) / sd, y[tr], lam), (X[te] - mu) / sd)
+            oos[te] = fit_predict(lam, X[tr], y[tr], X[te])[0]
         m = ~np.isnan(oos)
         ll = logloss(y[m], oos[m])
         if best is None or ll < best[1]:
@@ -113,8 +128,7 @@ def train_tf(tf: str, df: pd.DataFrame, n_blocks: int, candidates: list[str]) ->
             print(f"  [{tf}] {v:<22} top {int(f * 100):>3}%  n={st['n']:<5} média {st['media']:+.3f}  "
                   f"pior bloco {st['pior']:+.3f}  auc {trials[-1]['auc']:.3f}", flush=True)
     def robust(t):
-        vals = [x for x in t["por_bloco"].values() if np.isfinite(x)]
-        return (sum(x > 0 for x in vals), t["pior"], t["media"])
+        return (t["pior"], t["media"])              # best worst block, then best average
 
     best = max((t for t in trials if t["n"] >= 30 * (n_blocks - 2)), key=robust, default=None) \
         or max(trials, key=robust)
@@ -148,9 +162,7 @@ def train_tf(tf: str, df: pd.DataFrame, n_blocks: int, candidates: list[str]) ->
     # final test on the last block (trained on everything before it)
     tr = (g.block < test_block).to_numpy()
     te = (g.block == test_block).to_numpy()
-    mu, sd = X[tr].mean(0), X[tr].std(0)
-    sd[sd < 1e-9] = 1.0
-    p_te = recal(predict(fit_logreg((X[tr] - mu) / sd, y[tr], best["lam"]), (X - mu) / sd))
+    p_te = recal(fit_predict(best["lam"], X[tr], y[tr], X)[0])
     ev_te = p_te * win_r + (1 - p_te) * loss_r
     sel_te = te & (ev_te >= a_cut)
     ref = "mercado|a15|tp2"
@@ -170,6 +182,7 @@ def train_tf(tf: str, df: pd.DataFrame, n_blocks: int, candidates: list[str]) ->
             calib.append([str(b), round(float(p_te[te][qb == b].mean()), 3), round(float(grp.mean()), 3), int(len(grp))])
     report = {
         "tf": tf, "plano": v, "filtro_top": best["filtro"], "ativo": enabled, "lambda": best["lam"],
+        "modelo": MODEL_TYPE,
         "dias": df.attrs["days"], "blocos": df.attrs["edges"], "periodo": df.attrs["period"],
         "alertas": int(len(df)),
         "walk_forward": {"media": round(best["media"], 3), "pior_bloco": round(best["pior"], 3),
@@ -186,14 +199,21 @@ def train_tf(tf: str, df: pd.DataFrame, n_blocks: int, candidates: list[str]) ->
     }
 
     # ship: refit on all blocks, fold Platt into the coefficients
-    mu_f, sd_f = X.mean(0), X.std(0)
-    sd_f[sd_f < 1e-9] = 1.0
-    w = fit_logreg((X - mu_f) / sd_f, y, best["lam"])
-    w = np.concatenate([[pa * w[0] + pb], pa * w[1:]])
     window = {"H1": 6, "M15": 8}[tf]
+    if MODEL_TYPE == "gbm":
+        _, gb = fit_predict(best["lam"], X, y, X[:1])
+        body = {"type": "gbm", "gbm": gb.export(), "platt": [round(pa, 6), round(pb, 6)],
+                "mean": [0.0] * len(names), "std": [1.0] * len(names), "coef": [0.0] * len(names),
+                "intercept": 0.0}
+    else:
+        mu_f, sd_f = X.mean(0), X.std(0)
+        sd_f[sd_f < 1e-9] = 1.0
+        w = fit_logreg((X - mu_f) / sd_f, y, best["lam"])
+        w = np.concatenate([[pa * w[0] + pb], pa * w[1:]])
+        body = {"type": "logit", "mean": mu_f.round(6).tolist(), "std": sd_f.round(6).tolist(),
+                "coef": [round(float(c), 4) for c in w[1:]], "intercept": round(float(w[0]), 5)}
     model = {
-        "features": names, "mean": mu_f.round(6).tolist(), "std": sd_f.round(6).tolist(),
-        "coef": [round(float(c), 4) for c in w[1:]], "intercept": round(float(w[0]), 5),
+        "features": names, **body,
         "ev_grades": [[round(t, 4), gname] for t, gname in cuts], "ev_actionable": round(a_cut, 4),
         "p_actionable": 0.0, "enabled": enabled, "win_r": round(win_r, 4), "loss_r": round(loss_r, 4),
         "plan": {"entry": em, "stop": sk, "exit": xk, "window": window},
@@ -209,19 +229,32 @@ def main() -> int:
     ap.add_argument("--sim", action="append", required=True)
     ap.add_argument("--blocks", action="append", type=int, default=None)
     ap.add_argument("--candidates", type=int, default=8)
+    ap.add_argument("--entries", default="", help="restrict entry modes, e.g. mercado,confirmacao")
+    ap.add_argument("--model", choices=("logit", "gbm"), default="logit")
+    ap.add_argument("--force-enable", default="",
+                    help="timeframes to enable even if they fail the rule (user choice); marked validated=false")
+    ap.add_argument("--profile", default="", help="name stored in the file (e.g. mercado, limite)")
     ap.add_argument("--model-out", default=MODEL_PATH)
     ap.add_argument("--report", default=os.path.join(ROOT, "research", "RESULTADOS_ENTRADAS.json"))
     a = ap.parse_args()
+    global MODEL_TYPE
+    MODEL_TYPE = a.model
     blocks = a.blocks or [7 if tf == "H1" else 5 for tf in a.tf]
     models, reports = {}, {}
     for tf, evp, simp, nb in zip(a.tf, a.events, a.sim, blocks):
         df = prepare(evp, simp, nb)
         df = df[df.tf == tf]
         lab = pd.read_csv(os.path.splitext(simp)[0] + "_resumo.csv")
+        if a.entries:
+            allowed = {x.strip() for x in a.entries.split(",")}
+            lab = lab[lab.variante.str.split("|").str[0].isin(allowed)]
         cands = list(lab.sort_values("pior_bloco", ascending=False).variante.head(a.candidates))
         print(f"== {tf}: {len(df)} alertas, candidatos: {cands}")
         models[tf], reports[tf] = train_tf(tf, df, nb, cands)
-    out = {"version": 2, "models": models,
+        models[tf]["validated"] = bool(models[tf]["enabled"])
+        if tf in {x.strip() for x in a.force_enable.split(",") if x.strip()}:
+            models[tf]["enabled"] = True
+    out = {"version": 2, "profile": a.profile, "models": models,
            "info": {"trained_at": datetime.now(timezone.utc).isoformat(timespec="minutes"),
                     "events": int(sum(r["alertas"] for r in reports.values())),
                     "period": [min(r["periodo"][0] for r in reports.values()),

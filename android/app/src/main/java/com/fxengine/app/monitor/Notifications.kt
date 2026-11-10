@@ -76,6 +76,28 @@ object Notifications {
         }
     }
 
+    fun confirmed(ctx: Context, c: com.fxengine.app.data.ConfirmEvent) {
+        if (!canPost(ctx)) return
+        val trail = c.trailPips?.let { " · +1R ${c.tp1} → stop móvel ${it.toInt()} pips" } ?: ""
+        val id = ("conf" + c.symbol + c.entry).hashCode()
+        val n = NotificationCompat.Builder(ctx, CH_ALERTS)
+            .setSmallIcon(R.drawable.ic_stat_breakout)
+            .setContentTitle("✅ ${c.side} ${c.symbol} AGORA a mercado (${c.tf}, nota ${c.grade})")
+            .setContentText("Rompimento confirmado. Entrada ~${c.entry} · stop ${c.sl}")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "Rompimento confirmado no fechamento do candle ${c.tf}.\nEntrada a mercado ~${c.entry} · " +
+                    "stop ${c.sl} (${c.slPips.toInt()} pips)$trail · lote ${"%.2f".format(c.lots)}"))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(ctx, id))
+            .build()
+        try {
+            NotificationManagerCompat.from(ctx).notify(id, n)
+        } catch (_: SecurityException) {
+        }
+    }
+
     fun fill(ctx: Context, f: com.fxengine.app.data.FillEvent) {
         if (!canPost(ctx)) return
         val n = NotificationCompat.Builder(ctx, CH_ALERTS)

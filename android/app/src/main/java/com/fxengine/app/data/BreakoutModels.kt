@@ -17,6 +17,14 @@ data class BreakoutResult(
     val elapsedS: Double,
     val model: ModelInfo? = null,
     val fills: List<FillEvent> = emptyList(),
+    val confirmations: List<ConfirmEvent> = emptyList(),
+    val profile: String = "mercado",
+)
+
+/** A real-time confirmation plan whose candle closed in favour: enter at market now. */
+data class ConfirmEvent(
+    val symbol: String, val tf: String, val side: String, val grade: String, val entry: String,
+    val sl: String, val slPips: Double, val tp1: String, val trailPips: Double?, val lots: Double,
 )
 
 /** Out-of-sample validation of the probability model (from the historical replay). */
@@ -31,6 +39,8 @@ data class ModelInfo(
     val stopAtrH1: Double?,
     val label: String = "",          // which timeframe/plan the numbers refer to
     val trades: Int = 0,
+    val wfR: Double? = null,         // walk-forward mean R (several periods)
+    val validated: Boolean = true,   // false: enabled by user choice, not positive in validation
 )
 
 data class BreakoutPlanUi(
@@ -76,6 +86,7 @@ data class BreakoutItem(
     val firstSeen: String,
     val ageMin: Int,
     val isNew: Boolean,
+    val confirmState: String = "",   // "" | pendente | confirmado | nao_confirmou
     val quality: Double,
     val grade: String,
     val prob: Double?,          // calibrated P(target 1 before stop)
@@ -117,6 +128,7 @@ private fun parseItem(o: JSONObject): BreakoutItem {
         levelLabel = o.s("level_label"), bid = o.s("bid"), ask = o.s("ask"),
         extPips = o.d("ext_pips"), extAtr = o.d("ext_atr"), brokeAt = o.s("broke_at"),
         firstSeen = o.s("first_seen"), ageMin = o.optInt("age_min"), isNew = o.optBoolean("is_new"),
+        confirmState = o.s("confirm_state"),
         quality = o.d("quality"), grade = o.s("grade"),
         prob = if (o.isNull("prob")) null else o.d("prob"),
         evR = if (o.isNull("ev_r")) null else o.d("ev_r"),
@@ -148,6 +160,15 @@ fun parseBreakouts(raw: String): BreakoutOutput = try {
                 items = if (arr == null) emptyList() else List(arr.length()) { parseItem(arr.getJSONObject(it)) },
                 dataIssues = j.optJSONArray("data_issues").strings(), elapsedS = j.d("elapsed_s"),
                 model = j.optJSONObject("model")?.let { m -> parseModelInfo(m) },
+                profile = j.s("profile").ifBlank { "mercado" },
+                confirmations = j.optJSONArray("confirmations").let { arr ->
+                    if (arr == null) emptyList() else List(arr.length()) {
+                        val c = arr.getJSONObject(it)
+                        ConfirmEvent(c.s("symbol"), c.s("tf"), c.s("side"), c.s("grade"), c.s("entry"), c.s("sl"),
+                            c.d("sl_pips"), c.s("tp1"), if (c.isNull("trail_pips")) null else c.d("trail_pips"),
+                            c.d("lots"))
+                    }
+                },
                 fills = j.optJSONArray("fills").let { arr ->
                     if (arr == null) emptyList() else List(arr.length()) {
                         val f = arr.getJSONObject(it)
@@ -168,6 +189,20 @@ fun gradeAtLeast(grade: String, min: String): Boolean =
     GRADE_ORDER.indexOf(grade) >= GRADE_ORDER.indexOf(min).coerceAtLeast(0)
 
 private fun parseModelInfo(m: JSONObject): ModelInfo? {
+    m.optJSONObject("timeframes")?.let { tfs ->
+        val per = m.optJSONArray("period")
+        val tf = if (tfs.has("H1")) "H1" else tfs.keys().asSequence().firstOrNull() ?: return null
+        val sec = tfs.getJSONObject(tf)
+        val test = sec.optJSONObject("test") ?: return null
+        val old = test.optJSONObject("referencia_app_1_2") ?: return null
+        val new = test.optJSONObject("plano_com_filtro_A") ?: return null
+        val wf = sec.optJSONObject("walk_forward")
+        return ModelInfo(
+            m.optInt("events"), per?.optString(0)?.take(10) ?: "", per?.optString(1)?.take(10) ?: "",
+            old.d("acerto"), old.d("r"), new.d("acerto"), new.d("r"), null, tf, new.optInt("n"),
+            wfR = wf?.d("media"), validated = sec.optBoolean("validated", true),
+        )
+    }
     val t = m.optJSONObject("test") ?: return null
     val per = m.optJSONArray("period")
     val from = per?.optString(0)?.take(10) ?: ""

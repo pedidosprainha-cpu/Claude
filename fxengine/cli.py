@@ -21,6 +21,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "rompimentos = detector de rompimentos em tempo real")
     p.add_argument("--monitorar", type=int, metavar="SEG", default=0,
                    help="com 'rompimentos': repetir a varredura a cada SEG segundos e avisar os novos")
+    p.add_argument("--plano", default="mercado", choices=["mercado", "limite"],
+                   help="com 'rompimentos': mercado = entrada a mercado em tempo real (com confirmação); "
+                        "limite = ordem limite no reteste (plano com resultado positivo validado)")
     p.add_argument("--min-nota", default="B", choices=["A+", "A", "B", "C", "D"],
                    help="com 'rompimentos': nota mínima exibida (padrão B)")
     p.add_argument("--ativos", "-a", default=None,
@@ -102,8 +105,13 @@ def render_breakouts(r, min_grade: str = "B", only_new: bool = False) -> str:
                  else f"nota ({b.quality:4.0f})")
         lines.append(f" {act} {flag}{b.symbol:<7} {b.tf:<3} {b.side:<6} {STATUS_LABEL[b.status]:<17} "
                      f"{b.grade:<2} {score}  nível {i.fmt(b.level.price)} [{b.level.label[:44]}]")
-        ent = (f"LIMITE {i.fmt(p.entry)} até {p.valid_until:%H:%M} UTC" if p.entry_type == "limite"
-               else f"entrada {i.fmt(p.entry)}" + (" (após confirmação)" if p.entry_type == "confirmacao" else ""))
+        if p.entry_type == "limite":
+            ent = f"LIMITE {i.fmt(p.entry)} até {p.valid_until:%H:%M} UTC"
+        elif p.entry_type == "confirmacao":
+            ent = (f"CONFIRMADO: mercado ~{i.fmt(p.entry)}" if b.confirm_state == "confirmado"
+                   else f"mercado se o candle das {p.valid_until:%H:%M} UTC fechar a favor (~{i.fmt(p.entry)})")
+        else:
+            ent = f"entrada {i.fmt(p.entry)}"
         if p.exit_kind == "trail":
             ext = f"+1R {i.fmt(p.tp1)} → stop móvel {i.pips(p.trail):.0f} pips"
         else:
@@ -119,13 +127,18 @@ def run_breakouts(s: Settings, a) -> int:
     from datetime import datetime, timezone
     from . import breakouts as bk
 
+    s.breakout_plan = a.plano
     eng = Engine(s)
     os.makedirs(s.cache_dir, exist_ok=True)
-    state = os.path.join(s.cache_dir, "breakouts_state.json")
+    state = os.path.join(s.cache_dir, f"breakouts_state_{a.plano}.json")
     first = True
     while True:
         r = bk.scan(eng.provider, s, a.ativos, eng.now() if s.offline else datetime.now(timezone.utc), state)
         print(render_breakouts(r, a.min_nota, only_new=not first), flush=True)
+        for c in r.confirmations:
+            print(f" >>> CONFIRMADO {c['side']} {c['symbol']} ({c['tf']}): ENTRAR AGORA a mercado ~{c['entry']} · "
+                  f"stop {c['sl']} · +1R {c['tp1']} → stop móvel {c['trail_pips']} pips · lote {c['lots']:.2f}\a",
+                  flush=True)
         if any(b.is_new and b.actionable for b in r.breakouts) and not first:
             print("\a", end="", flush=True)
         if not a.monitorar:

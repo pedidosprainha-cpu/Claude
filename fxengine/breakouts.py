@@ -131,6 +131,9 @@ class Breakout:
     ev_r: float | None = None    # expected R of the plan = prob*rr1 - (1-prob)
     spread_ratio: float = 0.0
     extreme: float = 0.0         # most extreme price since the break (stop anchor for traps)
+    ref_close: float = 0.0       # close of the last closed bar at detection (confirmation reference)
+    confirm_state: str = ""      # "" | pendente | confirmado | nao_confirmou (confirmation plans)
+    confirmed_at: datetime | None = None
 
     @property
     def symbol(self) -> str:
@@ -300,8 +303,9 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
     """
     inst, frames = data.inst, data.frames
     cache = {} if cache is None else cache
-    model = load_model() if model is None else model
+    model = load_model(MODEL_PATHS.get(s.breakout_plan, MODEL_PATH)) if model is None else model
     out: list[Breakout] = []
+    ctx_memo: dict[int, dict] = {}
     h1 = frames.get("H1")
     if "zones" not in cache:
         cache["zones"] = (level_map(frames, data.price, inst.round_step, float(ta.atr(h1).iloc[-1]))
@@ -338,6 +342,7 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
             b = Breakout(inst, tf, td, bd, status, run > 2.2, lv, data.price,
                          data.bid, data.ask, a, ext, max(len(closed) - 1 - j, 0) if j < len(closed) else 0, idx)
             b.extreme = float(extreme)
+            b.ref_close = float(closed.c.iloc[-1])
             _score(b, closed, forming, j, bbw, htf, strength, events, sess, now)
             atr_h1 = cache["atr_h1"] or a
             m_tf = _tf_model(model, tf)
@@ -364,6 +369,9 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
                         b.quality -= 5
                         b.cons.append(f"rompimentos neste ativo/TF costumam falhar ({b.hist_wins}/{b.hist_n} seguiram)")
             b.features = _features(b, closed, j, bbw, htf, strength, sess, zones, tf_ctx, sp)
+            if b.direction not in ctx_memo:            # per call only: hour/day values must be current
+                ctx_memo[b.direction] = context_features(h1, data.price, b.direction, now)
+            b.features.update(ctx_memo[b.direction])
             b.heuristic = float(np.clip(b.quality, 0, 100))
             event_block = any(c.startswith("evento de alto impacto") for c in b.cons)
             _finalize(b, _tf_model(model, tf), s, event_block)
@@ -374,6 +382,16 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
         if not any(k.direction == b.direction and (k.status == "falso") == (b.status == "falso")
                    and abs(k.level.price - b.level.price) <= 0.5 * max(k.atr, b.atr) for k in kept):
             kept.append(b)
+    # never two actionable signals in opposite directions on the same instrument
+    act = sorted((b for b in kept if b.actionable), key=lambda x: (x.ev_r if x.ev_r is not None else x.quality),
+                 reverse=True)
+    if act:
+        lead = act[0].direction
+        for b in act[1:]:
+            if b.direction != lead:
+                b.actionable = False
+                b.blocked = True
+                b.cons.append("há um sinal mais forte na direção oposta neste ativo")
     return kept
 
 
@@ -385,7 +403,49 @@ FEATURES = [
     "brk_body", "brk_range", "brk_clv", "htf_trend", "htf_mom", "strength_dir", "liq",
     "sess_asia", "sess_overlap", "spread_ratio", "rr1", "room_atr", "touches", "approach",
     "adx", "atr_pct", "hist_p", "is_metal", "is_long",
+] + [
+    # context (research/augment_features.py computes these offline with the same function)
+    "h_london", "h_ny", "h_asia", "h_sin", "h_cos", "dow_mon", "dow_fri",
+    "adr_used", "day_pos", "move_today", "d1_trend", "d1_dist", "w1_pos",
 ]
+
+
+def context_features(h1: pd.DataFrame, price: float, td: int, now: datetime) -> dict:
+    """Time-of-day, daily-range exhaustion and higher-timeframe position, in trade direction.
+
+    Uses only H1 bars up to `now` (the forming bar included), so the live monitor and the
+    historical replay compute identical values."""
+    t = pd.Timestamp(now)
+    hour = t.hour + t.minute / 60
+    out = {"h_london": float(7 <= hour < 10), "h_ny": float(12 <= hour < 15),
+           "h_asia": float(hour >= 22 or hour < 6),
+           "h_sin": float(np.sin(2 * np.pi * hour / 24)), "h_cos": float(np.cos(2 * np.pi * hour / 24)),
+           "dow_mon": float(t.dayofweek == 0), "dow_fri": float(t.dayofweek == 4),
+           "adr_used": 0.5, "day_pos": 0.0, "move_today": 0.0, "d1_trend": 0.0, "d1_dist": 0.0, "w1_pos": 0.0}
+    if h1 is None or len(h1) < 48:
+        return out
+    d1 = ta.ny_daily(h1)
+    if len(d1) < 16:
+        return out
+    atr_d = float(ta.atr(d1).iloc[-2]) if len(d1) > 15 else float((d1.h - d1.l).mean())
+    if not np.isfinite(atr_d) or atr_d <= 0:
+        return out
+    today = d1.iloc[-1]
+    rng = float(today.h - today.l)
+    mid = (float(today.h) + float(today.l)) / 2
+    ema = ta.ema(d1.c, 20)
+    out["adr_used"] = float(np.clip(rng / atr_d, 0, 3))
+    out["day_pos"] = float(np.clip(td * (price - mid) / max(rng / 2, 1e-12), -1.5, 1.5))
+    out["move_today"] = float(np.clip(td * (price - float(today.o)) / atr_d, -3, 3))
+    out["d1_trend"] = float(np.clip(td * (ema.iloc[-1] - ema.iloc[-6]) / (5 * atr_d) * 5, -3, 3))
+    out["d1_dist"] = float(np.clip(td * (price - ema.iloc[-1]) / atr_d, -4, 4))
+    w1 = ta.resample(d1.assign(v=0.0), "W-FRI")
+    if len(w1) >= 2:
+        pw = w1.iloc[-2]
+        wr = float(pw.h - pw.l)
+        if wr > 0:
+            out["w1_pos"] = float(np.clip(td * (price - (pw.h + pw.l) / 2) / (wr / 2), -3, 3))
+    return out
 
 
 def _tf_context(closed: pd.DataFrame, a: float) -> dict:
@@ -474,6 +534,10 @@ class BreakoutModel:
     win_r: float = 0.0                              # average R of winning trades (version 2)
     loss_r: float = -1.0                            # average R of losing trades (version 2)
     enabled: bool = True                            # False: timeframe never reaches grade A
+    validated: bool = True                          # False: enabled by user choice, not by the validation rule
+    mtype: str = "logit"                            # logit | gbm
+    gbm: dict = field(default_factory=dict)         # {"base": z0, "trees": [[f, thr, left, right, leaf], ...]}
+    platt: tuple = (1.0, 0.0)                       # recalibration applied to the GBM score
 
     def expected_r(self, p: float, rr1: float) -> float:
         if self.plan:
@@ -483,6 +547,16 @@ class BreakoutModel:
 
     def prob(self, feats: dict) -> float:
         x = np.array([derived_value(f, feats) for f in self.features], dtype=float)
+        if self.mtype == "gbm":
+            z = float(self.gbm.get("base", 0.0))
+            for nodes in self.gbm.get("trees", []):
+                i = 0
+                while nodes[i][0] >= 0:
+                    f, thr, li, ri, _ = nodes[i]
+                    i = li if x[int(f)] <= thr else ri
+                z += nodes[i][4]
+            a, b = self.platt
+            return float(1 / (1 + np.exp(-(a * z + b))))
         z = (x - self.mean) / self.std
         return float(1 / (1 + np.exp(-(z @ self.coef + self.intercept))))
 
@@ -509,7 +583,11 @@ def derived_value(name: str, feats: dict) -> float:
 
 
 _MODEL_CACHE: dict = {}
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "data", "breakout_model.json")
+MODEL_PATHS = {
+    "mercado": os.path.join(os.path.dirname(__file__), "data", "breakout_model_mercado.json"),
+    "limite": os.path.join(os.path.dirname(__file__), "data", "breakout_model_limite.json"),
+}
+MODEL_PATH = MODEL_PATHS["mercado"]
 
 
 def _model_from(d: dict, info: dict | None = None) -> BreakoutModel:
@@ -518,7 +596,9 @@ def _model_from(d: dict, info: dict | None = None) -> BreakoutModel:
                          float(d["ev_actionable"]), float(d.get("p_actionable", 0.0)), info or d.get("info", {}),
                          d.get("geometry") or {}, list(d.get("exclude_status") or []),
                          bool(d.get("exclude_metals", False)), d.get("plan") or {},
-                         float(d.get("win_r", 0.0)), float(d.get("loss_r", -1.0)), bool(d.get("enabled", True)))
+                         float(d.get("win_r", 0.0)), float(d.get("loss_r", -1.0)), bool(d.get("enabled", True)),
+                         bool(d.get("validated", d.get("enabled", True))),
+                         d.get("type", "logit"), d.get("gbm") or {}, tuple(d.get("platt") or (1.0, 0.0)))
 
 
 def load_model(path: str = MODEL_PATH) -> "ModelSet | BreakoutModel | None":
@@ -538,6 +618,23 @@ def load_model(path: str = MODEL_PATH) -> "ModelSet | BreakoutModel | None":
         m = None
     _MODEL_CACHE[path] = m
     return m
+
+
+def model_summary(plan: str) -> dict | None:
+    """Validation numbers of a profile, for the app's validation card (read straight from the file)."""
+    path = MODEL_PATHS.get(plan, MODEL_PATH)
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    info = d.get("info", {})
+    tfs = {}
+    for tf, m in d.get("models", {}).items():
+        tfs[tf] = {"enabled": m.get("enabled"), "validated": m.get("validated", m.get("enabled")),
+                   "plan": m.get("plan"), "test": m.get("test"), "walk_forward": m.get("walk_forward")}
+    return {"profile": d.get("profile", plan), "events": info.get("events"), "period": info.get("period"),
+            "timeframes": tfs}
 
 
 def _tf_model(model, tf: str):
@@ -813,6 +910,12 @@ class Tracker:
                 b.is_new = True
                 new += 1
             p = b.plan
+            if (p is not None and p.entry_type == "confirmacao" and b.actionable and "confirm_at" not in m
+                    and p.valid_until is not None):
+                # real-time confirmation plan: enter at market when the next bar closes in favour
+                m.update(confirm_at=p.valid_until.isoformat(), ref=b.ref_close, sl=p.sl, grade=b.grade,
+                         side=b.side, trail=p.trail, period_min=int(TF_SPEC[b.tf]["period"].total_seconds() // 60),
+                         cstate="pendente", lvl=b.level.price)
             if (p is not None and p.entry_type == "limite" and b.actionable and "limit" not in m
                     and p.valid_until is not None):
                 # remember the suggested pending order so a later scan can say when price reaches it
@@ -820,10 +923,15 @@ class Tracker:
                          side=b.side, filled=False)
             m.update(level=b.level.price, atr=b.atr, last=now.isoformat())
             b.first_seen = datetime.fromisoformat(m["first"])
+            if m.get("cstate"):
+                b.confirm_state = m["cstate"]
+                if m.get("confirmed_at"):
+                    b.confirmed_at = datetime.fromisoformat(m["confirmed_at"])
         cutoff = now - self.ttl
         self.items = [it for it in self.items if datetime.fromisoformat(it["last"]) >= cutoff
                       or (it.get("limit") is not None and not it.get("filled")
-                          and datetime.fromisoformat(it["valid_until"]) >= now)]
+                          and datetime.fromisoformat(it["valid_until"]) >= now)
+                      or it.get("cstate") == "pendente"]
         self.save()
         return new
 
@@ -833,6 +941,47 @@ class Tracker:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.items, f)
             os.replace(tmp, self.path)
+
+    def check_confirmations(self, data: dict, now: datetime, s: Settings, prices: dict) -> list[dict]:
+        """Pending confirmation plans whose bar has closed: confirmed (enter now) or not."""
+        out = []
+        for it in self.items:
+            if it.get("cstate") != "pendente":
+                continue
+            at = pd.Timestamp(it["confirm_at"])
+            if pd.Timestamp(now) < at:
+                continue
+            d = data.get(it["sym"])
+            if d is None:
+                continue
+            if pd.Timestamp(now) - at > pd.Timedelta(minutes=30):
+                it["cstate"] = "nao_confirmou"            # too late to act on it
+                continue
+            df = d.frames.get(it["tf"])
+            start = at - pd.Timedelta(minutes=it["period_min"])
+            if df is None or start not in df.index:
+                continue
+            close = float(df.loc[start, "c"])
+            td = it["dir"]
+            if td * (close - it["ref"]) <= 0:
+                it["cstate"] = "nao_confirmou"
+                continue
+            inst = d.inst
+            entry = d.ask if td == 1 else d.bid
+            atr_h1 = float(ta.atr(d.frames["H1"]).iloc[-1]) if "H1" in d.frames else abs(entry - it["sl"])
+            sl_d = max(td * (entry - it["sl"]), 0.3 * atr_h1, 4 * (d.ask - d.bid))
+            sl = entry - td * sl_d
+            lots, risk, _ = position_size(inst, sl_d, s.balance, s.risk_pct, prices, s.account_ccy)
+            it.update(cstate="confirmado", confirmed_at=pd.Timestamp(now).isoformat())
+            out.append({"symbol": it["sym"], "tf": it["tf"], "side": it["side"], "grade": it["grade"],
+                        "entry": inst.fmt(entry), "sl": inst.fmt(sl), "sl_pips": round(inst.pips(sl_d), 1),
+                        "tp1": inst.fmt(entry + td * sl_d),
+                        "trail_pips": round(inst.pips(it["trail"]), 0) if it.get("trail") else None,
+                        "lots": lots, "risk": round(risk, 2), "level": inst.fmt(it["lvl"]),
+                        "close": inst.fmt(close), "time": pd.Timestamp(now).isoformat()})
+        if out or any(it.get("cstate") == "nao_confirmou" for it in self.items):
+            self.save()
+        return out
 
     def check_fills(self, data: dict, now: datetime) -> list[dict]:
         """Pending limit entries reached since they were suggested (bid/ask aware, M15 lows/highs)."""
@@ -874,10 +1023,12 @@ class BreakoutScan:
     status: dict[str, str]
     errors: dict[str, str]
     fills: list = field(default_factory=list)      # suggested limit entries reached since last scan
+    confirmations: list = field(default_factory=list)  # confirmation plans confirmed: enter at market now
+    profile: str = "mercado"
 
 
 def scan(provider, s: Settings, spec: str | None, now: datetime, state_path: str | None = None,
-         progress=None) -> BreakoutScan:
+         progress=None, model=None) -> BreakoutScan:
     def step(p, msg):
         if progress:
             progress(min(max(p, 0.0), 100.0), msg)
@@ -908,13 +1059,15 @@ def scan(provider, s: Settings, spec: str | None, now: datetime, state_path: str
             continue
         step(72 + 26 * k / max(len(targets), 1), f"Procurando rompimentos em {inst.symbol}")
         try:
-            found += detect(d, now, s, prices, strength, ctx.events, sess)
+            found += detect(d, now, s, prices, strength, ctx.events, sess, model=model)
         except Exception as e:  # noqa: BLE001 - one instrument must not break the monitor
             errors[inst.symbol] = f"erro na detecção: {e}"
     found.sort(key=lambda b: (b.actionable, b.ev_r if b.ev_r is not None else b.quality / 100 - 0.5,
                               -b.bars_since), reverse=True)
     tracker = Tracker(state_path)
     fills = tracker.check_fills(data, now)
+    confirmations = tracker.check_confirmations(data, now, s, prices)
     new = tracker.mark(found, now)
     step(100, "Concluído")
-    return BreakoutScan(now, sess, found, len(targets), closed, new, ctx.status, errors, fills)
+    return BreakoutScan(now, sess, found, len(targets), closed, new, ctx.status, errors, fills, confirmations,
+                        s.breakout_plan)

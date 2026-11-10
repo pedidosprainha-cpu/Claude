@@ -1,0 +1,332 @@
+{
+ "H1": {
+  "tf": "H1",
+  "plano": "confirmacao|n05|tr10",
+  "filtro_top": 0.1,
+  "ativo": false,
+  "lambda": 1000,
+  "modelo": "logit",
+  "dias": 750,
+  "blocos": [
+   "2024-07-23",
+   "2024-12-10",
+   "2025-05-05",
+   "2025-09-17",
+   "2026-02-06",
+   "2026-06-24"
+  ],
+  "periodo": [
+   "2024-02-23",
+   "2026-11-05"
+  ],
+  "alertas": 99767,
+  "walk_forward": {
+   "media": -0.005,
+   "pior_bloco": -0.039,
+   "por_bloco": {
+    "1": 0.074,
+    "2": -0.029,
+    "3": -0.039,
+    "4": -0.038,
+    "5": 0.014
+   },
+   "n": 3480
+  },
+  "teste": {
+   "referencia_app_1_2": {
+    "n": 13721,
+    "por_dia": 127.05,
+    "acerto": 0.295,
+    "r": -0.151
+   },
+   "plano_sem_filtro": {
+    "n": 6554,
+    "por_dia": 60.69,
+    "acerto": 0.431,
+    "r": -0.132
+   },
+   "plano_com_filtro_A": {
+    "n": 701,
+    "por_dia": 6.49,
+    "acerto": 0.495,
+    "r": 0.037
+   },
+   "auc": 0.558,
+   "calibracao": [
+    [
+     "(0.213, 0.393]",
+     0.352,
+     0.359,
+     1639
+    ],
+    [
+     "(0.393, 0.434]",
+     0.414,
+     0.424,
+     1638
+    ],
+    [
+     "(0.434, 0.472]",
+     0.453,
+     0.456,
+     1638
+    ],
+    [
+     "(0.472, 0.605]",
+     0.501,
+     0.484,
+     1639
+    ]
+   ]
+  },
+  "candidatos": [
+   {
+    "v": "confirmacao|n05|tr10",
+    "filtro": 0.1,
+    "media": -0.005,
+    "pior": -0.039,
+    "n": 3480
+   },
+   {
+    "v": "confirmacao|n10|tr10",
+    "filtro": 0.25,
+    "media": -0.02,
+    "pior": -0.041,
+    "n": 8700
+   },
+   {
+    "v": "confirmacao|n10|tr10",
+    "filtro": 0.1,
+    "media": -0.009,
+    "pior": -0.046,
+    "n": 3480
+   },
+   {
+    "v": "confirmacao|n10|tr15",
+    "filtro": 0.25,
+    "media": -0.026,
+    "pior": -0.051,
+    "n": 8700
+   },
+   {
+    "v": "confirmacao|n05|tr10",
+    "filtro": 0.25,
+    "media": -0.026,
+    "pior": -0.053,
+    "n": 8700
+   },
+   {
+    "v": "confirmacao|n05|tr10",
+    "filtro": 0.5,
+    "media": -0.042,
+    "pior": -0.054,
+    "n": 17399
+   },
+   {
+    "v": "confirmacao|n10|tr10",
+    "filtro": 0.5,
+    "media": -0.044,
+    "pior": -0.055,
+    "n": 17399
+   },
+   {
+    "v": "confirmacao|n10|tp15",
+    "filtro": 0.25,
+    "media": -0.028,
+    "pior": -0.057,
+    "n": 8700
+   },
+   {
+    "v": "confirmacao|n10|tp15",
+    "filtro": 0.1,
+    "media": -0.007,
+    "pior": -0.059,
+    "n": 3480
+   },
+   {
+    "v": "mercado|n10|tr10",
+    "filtro": 0.25,
+    "media": -0.036,
+    "pior": -0.06,
+    "n": 18200
+   },
+   {
+    "v": "confirmacao|n10|tr10",
+    "filtro": 0.05,
+    "media": 0.012,
+    "pior": -0.065,
+    "n": 1740
+   },
+   {
+    "v": "confirmacao|n10|tr15",
+    "filtro": 0.1,
+    "media": -0.03,
+    "pior": -0.067,
+    "n": 3480
+   }
+  ]
+ },
+ "M15": {
+  "tf": "M15",
+  "plano": "confirmacao|a15|tr10",
+  "filtro_top": 0.1,
+  "ativo": false,
+  "lambda": 1000,
+  "modelo": "logit",
+  "dias": 64,
+  "blocos": [
+   "2026-09-08",
+   "2026-09-23",
+   "2026-10-08",
+   "2026-10-23"
+  ],
+  "periodo": [
+   "2026-08-25",
+   "2026-11-06"
+  ],
+  "alertas": 17872,
+  "walk_forward": {
+   "media": -0.12,
+   "pior_bloco": -0.131,
+   "por_bloco": {
+    "1": -0.081,
+    "2": -0.131,
+    "3": -0.117
+   },
+   "n": 532
+  },
+  "teste": {
+   "referencia_app_1_2": {
+    "n": 3845,
+    "por_dia": 295.77,
+    "acerto": 0.336,
+    "r": -0.102
+   },
+   "plano_sem_filtro": {
+    "n": 1851,
+    "por_dia": 142.38,
+    "acerto": 0.436,
+    "r": -0.139
+   },
+   "plano_com_filtro_A": {
+    "n": 174,
+    "por_dia": 13.38,
+    "acerto": 0.489,
+    "r": -0.039
+   },
+   "auc": 0.493,
+   "calibracao": [
+    [
+     "(0.379, 0.419]",
+     0.409,
+     0.449,
+     463
+    ],
+    [
+     "(0.419, 0.428]",
+     0.423,
+     0.46,
+     463
+    ],
+    [
+     "(0.428, 0.437]",
+     0.433,
+     0.381,
+     462
+    ],
+    [
+     "(0.437, 0.465]",
+     0.444,
+     0.454,
+     463
+    ]
+   ]
+  },
+  "candidatos": [
+   {
+    "v": "confirmacao|a15|tr10",
+    "filtro": 0.1,
+    "media": -0.12,
+    "pior": -0.131,
+    "n": 532
+   },
+   {
+    "v": "mercado|a15|tp15",
+    "filtro": 0.25,
+    "media": -0.11,
+    "pior": -0.133,
+    "n": 2799
+   },
+   {
+    "v": "confirmacao|a15|tr10",
+    "filtro": 0.05,
+    "media": -0.099,
+    "pior": -0.139,
+    "n": 266
+   },
+   {
+    "v": "mercado|a15|tr10",
+    "filtro": 0.5,
+    "media": -0.095,
+    "pior": -0.139,
+    "n": 5598
+   },
+   {
+    "v": "mercado|a15|tr10",
+    "filtro": 0.25,
+    "media": -0.097,
+    "pior": -0.151,
+    "n": 2799
+   },
+   {
+    "v": "mercado|n05|tp15",
+    "filtro": 0.5,
+    "media": -0.13,
+    "pior": -0.153,
+    "n": 5598
+   },
+   {
+    "v": "mercado|a15|tp15",
+    "filtro": 0.5,
+    "media": -0.116,
+    "pior": -0.155,
+    "n": 5598
+   },
+   {
+    "v": "mercado|a15|tr10",
+    "filtro": 0.05,
+    "media": -0.055,
+    "pior": -0.162,
+    "n": 560
+   },
+   {
+    "v": "mercado|a15|tp15",
+    "filtro": 0.1,
+    "media": -0.098,
+    "pior": -0.162,
+    "n": 1120
+   },
+   {
+    "v": "confirmacao|a15|tr10",
+    "filtro": 0.5,
+    "media": -0.129,
+    "pior": -0.163,
+    "n": 2656
+   },
+   {
+    "v": "mercado|n10|tp15",
+    "filtro": 0.5,
+    "media": -0.137,
+    "pior": -0.169,
+    "n": 5598
+   },
+   {
+    "v": "mercado|n10|tr10",
+    "filtro": 0.5,
+    "media": -0.139,
+    "pior": -0.183,
+    "n": 5598
+   }
+  ]
+ }
+}

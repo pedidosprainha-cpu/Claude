@@ -254,6 +254,24 @@ private fun MonitorCard(
             }
         }
         Spacer(Modifier.height(14.dp))
+        Text("Entrada", color = Fx.Muted, fontSize = 12.sp)
+        val plans = listOf("mercado" to "A mercado (tempo real)", "limite" to "Limite no reteste")
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            plans.forEachIndexed { i, (key, label) ->
+                SegmentedButton(
+                    selected = settings.breakoutPlan == key,
+                    onClick = { onSettings(settings.copy(breakoutPlan = key)) },
+                    shape = SegmentedButtonDefaults.itemShape(i, plans.size),
+                ) { Text(label, fontSize = 13.sp, maxLines = 1) }
+            }
+        }
+        Text(
+            if (settings.breakoutPlan == "mercado")
+                "Alerta no fechamento do candle que confirma o rompimento: você entra a mercado na hora."
+            else "Ordem limite no reteste do nível (validade de algumas horas); o app avisa quando o preço chegar.",
+            color = Fx.Muted, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 4.dp),
+        )
+        Spacer(Modifier.height(10.dp))
         Text("Frequência", color = Fx.Muted, fontSize = 12.sp)
         val intervals = listOf(60 to "1 min", 120 to "2 min", 300 to "5 min")
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -312,11 +330,23 @@ private fun ValidationCard(m: com.fxengine.app.data.ModelInfo) {
             }
         }
         Spacer(Modifier.height(8.dp))
+        m.wfR?.let { wf ->
+            Text(
+                "Média em vários períodos (walk-forward): ${if (wf >= 0) "+" else ""}${wf.f(2)}R por trade",
+                color = Fx.Muted, fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+        }
         Text(
-            if (m.newR > 0.05) "Resultado histórico positivo no período de teste, mas é um histórico curto: opere com " +
-                "risco pequeno e acompanhe. Desempenho passado não garante resultado futuro."
-            else "A precisão subiu, mas a expectativa ainda fica perto de zero depois do spread: use os alertas " +
-                "como oportunidade a confirmar no gráfico, não como ordem automática.",
+            when {
+                !m.validated -> "Assertividade bem maior que antes, mas a expectativa histórica fica perto de zero " +
+                    "depois do spread: não é uma vantagem comprovada. O plano \"Limite no reteste\" é o que teve " +
+                    "resultado positivo validado. Use risco pequeno."
+                m.newR > 0.05 -> "Resultado positivo validado em vários períodos e no teste final, mas simulado com " +
+                    "spreads típicos: opere com risco pequeno e acompanhe. Passado não garante futuro."
+                else -> "A expectativa fica perto de zero depois do spread: use os alertas como oportunidade a " +
+                    "confirmar, não como ordem automática."
+            },
             color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
         )
     }
@@ -364,6 +394,14 @@ fun BreakoutCard(b: BreakoutItem, onClick: () -> Unit) {
                         "Entrada: limite em ${b.plan.entry} até ${b.plan.validUntil}",
                         color = Fx.Gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                     )
+                }
+                if (b.plan.entryType == "confirmacao") {
+                    val (txt, col) = when (b.confirmState) {
+                        "confirmado" -> "CONFIRMADO: entrar a mercado agora" to Fx.Buy
+                        "nao_confirmou" -> "Não confirmou: não entrar" to Fx.Muted
+                        else -> "Aguardando o candle das ${b.plan.validUntil} fechar a favor" to Fx.Gold
+                    }
+                    Text(txt, color = col, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
                 if (b.prob != null && b.evR != null) {
                     Text(
@@ -420,8 +458,8 @@ fun BreakoutDetail(b: BreakoutItem) {
                 )
                 "confirmacao" -> PlanRow(
                     "Entrada", p.entry,
-                    "a mercado só se o próximo candle ${b.tf} fechar a favor (até ${p.validUntil})",
-                    Fx.Gold,
+                    p.entryText.ifBlank { "a mercado se o candle ${b.tf} das ${p.validUntil} fechar a favor" },
+                    if (b.confirmState == "confirmado") Fx.Buy else Fx.Gold,
                 )
                 else -> PlanRow("Entrada", p.entry, (if (b.isBuy) "compra no ask" else "venda no bid") + " · bid ${b.bid} / ask ${b.ask}")
             }
@@ -480,9 +518,11 @@ fun BreakoutDetail(b: BreakoutItem) {
         if (b.cons.isNotEmpty()) SectionCard("Atenção") { Bullets(b.cons, Fx.Warn, 6) }
         SectionCard("Como ler") {
             Text(
-                "Plano validado em ~100 mil rompimentos H1 de 3 anos (com spread): entrada com ORDEM LIMITE no " +
-                    "reteste do nível rompido (válida por algumas horas; se não executar, cancele), stop 1 ATR H1 além " +
-                    "do nível e, a partir de +1R, stop móvel 1 ATR H1 atrás do melhor preço, sem alvo fixo. " +
+                "Dois planos, testados em ~100 mil rompimentos H1 de 3 anos (com spread). A MERCADO (tempo real): o " +
+                    "alerta sai quando o candle seguinte fecha a favor do rompimento e você entra a mercado na hora; " +
+                    "stop 0,5 ATR H1 além do nível. LIMITE NO RETESTE: ordem limite no nível rompido (válida por " +
+                    "algumas horas), stop 1 ATR H1 além do nível. Nos dois, a partir de +1R o stop vira móvel, 1 ATR H1 " +
+                    "atrás do melhor preço, sem alvo fixo. " +
                     "A porcentagem é a chance histórica de casos parecidos terminarem no lucro com esse plano. " +
                     "Nota relativa: A+ = melhores 3%, A = melhores 10%. Rompimentos M15 não passaram na validação " +
                     "e aparecem só como informação. Quando o preço chega na sua ordem limite, o monitor avisa. " +

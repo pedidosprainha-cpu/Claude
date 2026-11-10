@@ -13,6 +13,7 @@ Motor de análise gráfica, quantitativa e fundamentalista de Forex (28 pares) e
   `android/.../data/Models.kt` em sincronia. Build: `cd android && ./gradlew assembleRelease`.
 - `analysis/` contém análises manuais antigas (anteriores ao motor).
 - `research/`: reconstituições históricas (H1 ~3 anos, M15 ~60 dias), laboratório de
-  entradas/saídas e treino do modelo por timeframe (`fxengine/data/breakout_model.json`, versão 2).
+  entradas/saídas e treino do modelo por timeframe, um arquivo por perfil de entrada
+  (`fxengine/data/breakout_model_mercado.json` = padrão do app, `breakout_model_limite.json`).
   Mudou as features ou o plano em `breakouts.py`? Refaça o fluxo de `research/README.md` e
   reporte os números do teste. Nunca ajuste regras olhando o bloco de teste.

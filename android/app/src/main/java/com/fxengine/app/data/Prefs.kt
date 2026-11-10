@@ -11,6 +11,7 @@ data class AppSettings(
     val useNews: Boolean = true,
     val monitorIntervalSec: Int = 120,   // breakout monitor cycle
     val alertMinGrade: String = "A",     // notify only breakouts with this grade or better
+    val breakoutPlan: String = "mercado", // mercado (real-time market entry) | limite (limit on retest)
 )
 
 class Prefs(context: Context) {
@@ -25,6 +26,7 @@ class Prefs(context: Context) {
         useNews = sp.getBoolean("use_news", true),
         monitorIntervalSec = sp.getInt("monitor_interval", 120),
         alertMinGrade = sp.getString("alert_min_grade", "A") ?: "A",
+        breakoutPlan = sp.getString("breakout_plan", "mercado") ?: "mercado",
     )
 
     fun save(s: AppSettings) {
@@ -36,6 +38,7 @@ class Prefs(context: Context) {
             .putBoolean("use_news", s.useNews)
             .putInt("monitor_interval", s.monitorIntervalSec)
             .putString("alert_min_grade", s.alertMinGrade)
+            .putString("breakout_plan", s.breakoutPlan)
             .apply()
     }
 

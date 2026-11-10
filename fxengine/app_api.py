@@ -194,8 +194,13 @@ def _entry_line(b: bk.Breakout, tz: ZoneInfo | None = None) -> str:
     if p.entry_type == "limite":
         return f"Ordem LIMITE de {b.side.lower()} em {i.fmt(p.entry)} (reteste do nível) — válida até {until}"
     if p.entry_type == "confirmacao":
-        return (f"{b.side.capitalize()} a mercado no fechamento do próximo candle {b.tf} (até {until}) "
-                f"somente se ele fechar a favor; referência {i.fmt(p.entry)}")
+        if b.confirm_state == "confirmado" and b.confirmed_at is not None:
+            hhmm = b.confirmed_at.astimezone(tz).strftime("%H:%M") if tz else b.confirmed_at.strftime("%H:%M UTC")
+            return f"CONFIRMADO às {hhmm}: {b.side.lower()} a mercado agora (~{i.fmt(p.entry)})"
+        if b.confirm_state == "nao_confirmou":
+            return "não confirmou no fechamento do candle: não entrar"
+        return (f"{b.side.capitalize()} a mercado no fechamento do candle {b.tf} das {until} "
+                f"se ele fechar a favor (o monitor avisa); referência {i.fmt(p.entry)}")
     return f"{b.side.capitalize()} a mercado em {i.fmt(p.entry)}"
 
 
@@ -253,6 +258,7 @@ def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
         "first_seen": b.first_seen.astimezone(tz).strftime("%H:%M") if b.first_seen else "",
         "age_min": age,
         "is_new": b.is_new,
+        "confirm_state": b.confirm_state,
         "quality": _num(b.quality, 1),
         "grade": b.grade,
         "prob": _num(b.prob, 3),
@@ -276,7 +282,6 @@ def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
 
 def breakouts_result_dict(r: bk.BreakoutScan, tz_name: str = "America/Sao_Paulo", elapsed: float = 0.0) -> dict:
     tz = ZoneInfo(tz_name)
-    model = bk.load_model()
     loc = r.now.astimezone(tz)
     issues = [f"{k}: {v}" for k, v in {**r.status, **r.errors}.items() if v not in ("ok", "sintético")]
     if r.closed:
@@ -297,18 +302,17 @@ def breakouts_result_dict(r: bk.BreakoutScan, tz_name: str = "America/Sao_Paulo"
         "fills": [{"symbol": f["symbol"], "tf": f["tf"], "side": f["side"], "grade": f["grade"],
                    "limit": UNIVERSE_FMT(f["symbol"], f["limit"]), "sl": UNIVERSE_FMT(f["symbol"], f["sl"])}
                   for f in r.fills],
-        "model": None if model is None else {
-            "events": model.info.get("events"), "period": model.info.get("period"),
-            "test": model.info.get("test"),
-            "geometry": getattr(model, "geometry", None),
-            "version": 2 if isinstance(model, bk.ModelSet) else 1},
+        "confirmations": r.confirmations,
+        "profile": r.profile,
+        "model": bk.model_summary(r.profile),
         "data_issues": issues,
         "elapsed_s": _num(elapsed, 1),
     }
 
 
 def scan_breakouts(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets: str = "all",
-                   tz_name: str = "America/Sao_Paulo", listener=None, offline: bool = False) -> str:
+                   tz_name: str = "America/Sao_Paulo", listener=None, offline: bool = False,
+                   plan: str = "mercado") -> str:
     """Light, fast scan for the real-time breakout monitor. Returns JSON."""
     def progress(pct: float, msg: str) -> None:
         if listener is not None:
@@ -317,11 +321,13 @@ def scan_breakouts(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 
     t0 = time.time()
     try:
         s = Settings(balance=float(balance), risk_pct=float(risk_pct), cache_dir=cache_dir,
-                     workers=6, offline=bool(offline))
+                     workers=6, offline=bool(offline),
+                     breakout_plan=plan if plan in bk.MODEL_PATHS else "mercado")
         os.makedirs(cache_dir, exist_ok=True)
         eng = Engine(s)
         res = bk.scan(eng.provider, s, None if assets in (None, "", "all") else assets, eng.now(),
-                      state_path=os.path.join(cache_dir, "breakouts_state.json"), progress=progress)
+                      state_path=os.path.join(cache_dir, f"breakouts_state_{s.breakout_plan}.json"),
+                      progress=progress)
         if res.scanned and not res.breakouts and len(res.errors) >= res.scanned:
             return json.dumps({"ok": False, "error": "Sem dados de mercado. Verifique a internet.",
                                "detail": "; ".join(f"{k}: {v}" for k, v in list(res.errors.items())[:6])},

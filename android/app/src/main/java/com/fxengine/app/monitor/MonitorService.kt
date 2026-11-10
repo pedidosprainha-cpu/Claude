@@ -64,11 +64,19 @@ class MonitorService : Service() {
             wakeLock?.acquire(interval + 120_000L)
             val res = BreakoutMonitor.scanOnce(this)
             if (res != null) {
-                res.items
-                    .filter { it.isNew && !it.blocked && gradeAtLeast(it.grade, settings.alertMinGrade) }
-                    .take(5)
-                    .forEach { Notifications.alert(this, it) }
-                res.fills.take(5).forEach { Notifications.fill(this, it) }
+                if (res.profile == "mercado") {
+                    // real-time market plan: the actionable moment is the confirmation candle close
+                    res.confirmations
+                        .filter { gradeAtLeast(it.grade, settings.alertMinGrade) }
+                        .take(5)
+                        .forEach { Notifications.confirmed(this, it) }
+                } else {
+                    res.items
+                        .filter { it.isNew && !it.blocked && gradeAtLeast(it.grade, settings.alertMinGrade) }
+                        .take(5)
+                        .forEach { Notifications.alert(this, it) }
+                    res.fills.take(5).forEach { Notifications.fill(this, it) }
+                }
             }
             val next = System.currentTimeMillis() + interval
             BreakoutMonitor.setNext(next)

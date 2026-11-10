@@ -90,7 +90,8 @@ def test_detect_end_to_end_builds_a_valid_plan():
     b = ups[0]
     p = b.plan
     assert p.sl < p.entry < p.tp1 < p.tp2
-    assert (p.entry_type == "mercado" and p.entry == data.ask) or (p.entry_type == "limite" and p.entry < data.ask)
+    assert (p.entry_type in ("mercado", "confirmacao") and p.entry == data.ask) or \
+        (p.entry_type == "limite" and p.entry < data.ask)
     assert p.rr1 >= 1.0 and p.lots > 0
     assert 0 <= b.quality <= 100 and b.grade in ("A+", "A", "B", "C", "D")
 
@@ -265,3 +266,62 @@ def test_tracker_reports_limit_fill_once(tmp_path):
     fills = bk.Tracker(path).check_fills({"EURUSD": filled}, later)
     assert len(fills) >= 1 and fills[0]["symbol"] == "EURUSD"
     assert bk.Tracker(path).check_fills({"EURUSD": filled}, later) == []   # reported once
+
+
+def test_gbm_export_matches_engine_inference(tmp_path):
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "research"))
+    from gbm import GBM
+
+    names = list(bk.FEATURES)[:6]
+    rng = np.random.default_rng(3)
+    X = rng.normal(size=(4000, len(names)))
+    y = (rng.random(4000) < 1 / (1 + np.exp(-(X[:, 0] * (X[:, 1] > 0))))).astype(float)
+    m = GBM(n_trees=30, depth=2, min_leaf=100).fit(X, y)
+    path = tmp_path / "gbm.json"
+    section = {"features": names, "type": "gbm", "gbm": m.export(), "platt": [1.0, 0.0],
+               "mean": [0.0] * len(names), "std": [1.0] * len(names), "coef": [0.0] * len(names),
+               "intercept": 0.0, "ev_grades": [[0.0, "A"]], "ev_actionable": 0.0, "enabled": True,
+               "win_r": 1.5, "loss_r": -1.0, "plan": {"entry": "mercado", "stop": "a15", "exit": "tr10"}}
+    path.write_text(json.dumps({"version": 2, "models": {"H1": section}, "info": {}}))
+    model = bk.load_model(str(path)).for_tf("H1")
+    for row in X[:50]:
+        feats = dict(zip(names, row))
+        assert model.prob(feats) == pytest.approx(float(m.predict(row[None, :])[0]), abs=1e-6)
+
+
+def test_confirmation_flow_alerts_once_when_next_bar_closes_in_favour(tmp_path):
+    names = list(bk.FEATURES)
+    sec = {"features": names, "mean": [0.0] * len(names), "std": [1.0] * len(names), "coef": [0.0] * len(names),
+           "intercept": 0.0, "ev_grades": [[-9.0, "A"]], "ev_actionable": -9.0, "enabled": True,
+           "win_r": 1.5, "loss_r": -1.0, "plan": {"entry": "confirmacao", "stop": "n05", "exit": "tr10"}}
+    path = tmp_path / "m.json"
+    path.write_text(json.dumps({"version": 2, "models": {"H1": sec, "M15": sec}, "info": {}}))
+    ms = bk.load_model(str(path))
+    c = ranging()
+    c[-4:] = [1.1016, 1.1022, 1.1026, 1.1029]
+    data = _instrument_data(c)
+    now = (data.frames["M15"].index[-1] + timedelta(minutes=15, seconds=5)).to_pydatetime()
+    out = [b for b in bk.detect(data, now, Settings(), {"EURUSD": data.price}, None, [], sessions.state(now),
+                                model=ms) if b.plan.entry_type == "confirmacao" and b.direction == 1]
+    assert out
+    for b in out:
+        b.actionable = True        # the synthetic move is "extended" (blocked); the flow is what is tested
+    state = str(tmp_path / "s.json")
+    bk.Tracker(state).mark(out, now)
+    b0 = out[0]
+    at = b0.plan.valid_until
+    period = bk.TF_SPEC[b0.tf]["period"]
+    # build the confirming bar: closes above the reference close
+    frames = dict(data.frames)
+    tf = frames[b0.tf].copy()
+    start = pd.Timestamp(at) - period
+    tf.loc[start] = {"o": b0.ref_close, "h": b0.ref_close + 0.001, "l": b0.ref_close, "c": b0.ref_close + 0.0008, "v": 0}
+    frames[b0.tf] = tf.sort_index()
+    px = b0.ref_close + 0.0008
+    later = (pd.Timestamp(at) + timedelta(minutes=2)).to_pydatetime()
+    d2 = InstrumentData(data.inst, frames, px, px - 0.00005, px + 0.00005, later, "teste", True, [])
+    conf = bk.Tracker(state).check_confirmations({"EURUSD": d2}, later, Settings(), {"EURUSD": px})
+    assert len(conf) >= 1 and conf[0]["side"] == "COMPRA"
+    assert bk.Tracker(state).check_confirmations({"EURUSD": d2}, later, Settings(), {"EURUSD": px}) == []
