@@ -85,6 +85,17 @@ class BreakoutPlan:
     sl_basis: str
     tp1_basis: str
     tp2_basis: str
+    entry_type: str = "mercado"            # mercado | limite | confirmacao
+    valid_until: datetime | None = None    # limit / confirmation expiry
+    exit_kind: str = "tp"                  # tp | be | trail
+    trail: float | None = None             # trailing distance (price units) once +1R is reached
+    exit_rule: str = ""
+
+
+ENTRY_TXT = {"mercado": "a mercado", "limite": "ordem limite", "confirmacao": "a mercado após confirmação"}
+STOP_CFG = {"n05": ("level", 0.5), "n10": ("level", 1.0), "a10": ("fill", 1.0), "a15": ("fill", 1.5)}
+EXIT_CFG = {"tp15": ("tp", 1.5), "tp2": ("tp", 2.0), "tp3": ("tp", 3.0), "be2": ("be", 2.0), "be3": ("be", 3.0),
+            "tr10": ("trail", 1.0), "tr15": ("trail", 1.5)}
 
 
 @dataclass
@@ -119,6 +130,7 @@ class Breakout:
     prob: float | None = None    # calibrated P(target 1 before stop), when a model is loaded
     ev_r: float | None = None    # expected R of the plan = prob*rr1 - (1-prob)
     spread_ratio: float = 0.0
+    extreme: float = 0.0         # most extreme price since the break (stop anchor for traps)
 
     @property
     def symbol(self) -> str:
@@ -325,10 +337,15 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
             idx = closed.index[j] if j < len(closed) else df.index[-1]
             b = Breakout(inst, tf, td, bd, status, run > 2.2, lv, data.price,
                          data.bid, data.ask, a, ext, max(len(closed) - 1 - j, 0) if j < len(closed) else 0, idx)
+            b.extreme = float(extreme)
             _score(b, closed, forming, j, bbw, htf, strength, events, sess, now)
             atr_h1 = cache["atr_h1"] or a
-            geo = model.geometry if (model is not None and not model.info.get("disabled")) else None
-            b.plan = _plan(b, extreme, zones, s, prices, atr_h1, geo)
+            m_tf = _tf_model(model, tf)
+            live = m_tf is not None and not m_tf.info.get("disabled")
+            if live and m_tf.plan:
+                b.plan = _plan_validated(b, s, prices, atr_h1, m_tf.plan, now)
+            else:
+                b.plan = _plan(b, extreme, zones, s, prices, atr_h1, m_tf.geometry if live else None)
             spread_ratio = (data.ask - data.bid) / (b.plan.sl_pips * inst.pip) if b.plan.sl_pips > 0 else 1.0
             b.spread_ratio = spread_ratio
             if spread_ratio > 0.3:
@@ -349,7 +366,7 @@ def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, f
             b.features = _features(b, closed, j, bbw, htf, strength, sess, zones, tf_ctx, sp)
             b.heuristic = float(np.clip(b.quality, 0, 100))
             event_block = any(c.startswith("evento de alto impacto") for c in b.cons)
-            _finalize(b, model, s, event_block)
+            _finalize(b, _tf_model(model, tf), s, event_block)
             out.append(b)
     # one event per level across timeframes: keep the best-scored one
     kept: list[Breakout] = []
@@ -453,11 +470,31 @@ class BreakoutModel:
     geometry: dict = field(default_factory=dict)   # {"stop_atr_h1": k | None, "tp1_r": m | None}
     exclude_status: list = field(default_factory=list)  # statuses that lost money in validation
     exclude_metals: bool = False
+    plan: dict = field(default_factory=dict)        # validated entry/stop/exit (version 2)
+    win_r: float = 0.0                              # average R of winning trades (version 2)
+    loss_r: float = -1.0                            # average R of losing trades (version 2)
+    enabled: bool = True                            # False: timeframe never reaches grade A
+
+    def expected_r(self, p: float, rr1: float) -> float:
+        if self.plan:
+            return p * self.win_r + (1 - p) * self.loss_r
+        return p * rr1 - (1 - p)
+
 
     def prob(self, feats: dict) -> float:
         x = np.array([derived_value(f, feats) for f in self.features], dtype=float)
         z = (x - self.mean) / self.std
         return float(1 / (1 + np.exp(-(z @ self.coef + self.intercept))))
+
+
+class ModelSet:
+    """One calibrated model per timeframe (fxengine/data/breakout_model.json, version 2)."""
+
+    def __init__(self, models: dict, info: dict):
+        self.models, self.info = models, info
+
+    def for_tf(self, tf: str) -> "BreakoutModel | None":
+        return self.models.get(tf) or self.models.get("*")
 
 
 def derived_value(name: str, feats: dict) -> float:
@@ -475,22 +512,36 @@ _MODEL_CACHE: dict = {}
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "data", "breakout_model.json")
 
 
-def load_model(path: str = MODEL_PATH) -> BreakoutModel | None:
+def _model_from(d: dict, info: dict | None = None) -> BreakoutModel:
+    return BreakoutModel(d["features"], np.array(d["mean"]), np.array(d["std"]), np.array(d["coef"]),
+                         float(d["intercept"]), [(float(t), g) for t, g in d["ev_grades"]],
+                         float(d["ev_actionable"]), float(d.get("p_actionable", 0.0)), info or d.get("info", {}),
+                         d.get("geometry") or {}, list(d.get("exclude_status") or []),
+                         bool(d.get("exclude_metals", False)), d.get("plan") or {},
+                         float(d.get("win_r", 0.0)), float(d.get("loss_r", -1.0)), bool(d.get("enabled", True)))
+
+
+def load_model(path: str = MODEL_PATH) -> "ModelSet | BreakoutModel | None":
+    """Version 2 file -> ModelSet (one model per timeframe); version 1 -> single BreakoutModel."""
     if path in _MODEL_CACHE:
         return _MODEL_CACHE[path]
     m = None
     try:
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
-        m = BreakoutModel(d["features"], np.array(d["mean"]), np.array(d["std"]), np.array(d["coef"]),
-                          float(d["intercept"]), [(float(t), g) for t, g in d["ev_grades"]],
-                          float(d["ev_actionable"]), float(d["p_actionable"]), d.get("info", {}),
-                          d.get("geometry") or {}, list(d.get("exclude_status") or []),
-                          bool(d.get("exclude_metals", False)))
+        if d.get("version") == 2:
+            m = ModelSet({tf: _model_from(md, d.get("info", {})) for tf, md in d["models"].items()},
+                         d.get("info", {}))
+        else:
+            m = _model_from(d)
     except (OSError, ValueError, KeyError):
         m = None
     _MODEL_CACHE[path] = m
     return m
+
+
+def _tf_model(model, tf: str):
+    return model.for_tf(tf) if isinstance(model, ModelSet) else model
 
 
 NO_MODEL = BreakoutModel([], np.zeros(0), np.ones(0), np.zeros(0), 0.0, [], 0.0, 0.0, {"disabled": True})
@@ -508,10 +559,11 @@ def _finalize(b: Breakout, model: BreakoutModel | None, s: Settings, event_block
         return
     p = model.prob(b.features)
     b.prob = p
-    b.ev_r = p * b.plan.rr1 - (1 - p)
+    b.ev_r = model.expected_r(p, b.plan.rr1)
     b.quality = round(p * 100, 1)
     b.grade = next((g for t, g in model.ev_grades if b.ev_r >= t), "D")
-    eligible = b.status not in model.exclude_status and not (b.inst.is_metal and model.exclude_metals)
+    eligible = (model.enabled and b.status not in model.exclude_status
+                and not (b.inst.is_metal and model.exclude_metals))
     if not eligible and b.grade in ("A+", "A"):
         b.grade = "B"
     b.actionable = (eligible and b.ev_r >= model.ev_actionable and p >= model.p_actionable
@@ -523,6 +575,8 @@ def _finalize(b: Breakout, model: BreakoutModel | None, s: Settings, event_block
         b.cons.append("no histórico este tipo de sinal perdeu dinheiro: só informativo, sem alerta")
     elif b.inst.is_metal and model.exclude_metals:
         b.cons.append("rompimentos em metais não tiveram expectativa positiva no histórico: só informativo")
+    elif not model.enabled:
+        b.cons.append(f"rompimentos {b.tf} não passaram na validação histórica: só informativo, sem alerta")
 
 
 def _score(b: Breakout, closed, forming, j, bbw, htf, strength, events, sess, now) -> None:
@@ -618,6 +672,63 @@ def _score(b: Breakout, closed, forming, j, bbw, htf, strength, events, sess, no
     b.quality = q
 
 
+def _plan_validated(b: Breakout, s: Settings, prices: dict, atr_h1: float, pcfg: dict,
+                    now: datetime) -> BreakoutPlan:
+    """Entry/stop/exit exactly as validated in research/entry_exit_lab.py for this timeframe."""
+    inst, a, td, L = b.inst, b.atr, b.direction, b.level.price
+    half = max(b.ask - b.bid, 0.0) / 2
+    market = b.ask if td == 1 else b.bid
+    period = TF_SPEC[b.tf]["period"]
+    em = pcfg.get("entry", "mercado")
+    entry_type, entry, valid_until = "mercado", market, None
+    if em in ("reteste", "meio"):
+        limit = (L + td * 0.1 * a) if em == "reteste" else (b.price - td * 0.5 * abs(b.price - L))
+        if td * (market - limit) > 0:
+            entry_type, entry = "limite", limit
+            valid_until = pd.Timestamp(now).floor(period).to_pydatetime() + int(pcfg.get("window", 6)) * period
+    elif em == "confirmacao":
+        entry_type = "confirmacao"
+        valid_until = pd.Timestamp(now).floor(period).to_pydatetime() + period
+    anchor, m = STOP_CFG.get(pcfg.get("stop", "a15"), ("fill", 1.5))
+    trap = b.status == "falso"
+    if anchor == "level":
+        sl_px = (b.extreme + b.break_dir * m * 0.5 * atr_h1) if trap else (L - td * m * atr_h1)
+        sl_d = td * (entry - sl_px)
+        sl_basis = (f"além do extremo do falso rompimento ({inst.fmt(b.extreme)})" if trap
+                    else f"{m:g} ATR H1 além do nível rompido {inst.fmt(L)}")
+    else:
+        sl_d = m * atr_h1
+        sl_basis = f"{m:g} ATR H1 a partir da entrada"
+    floor = max(0.3 * atr_h1, 8 * half)
+    if sl_d < floor:
+        sl_d, sl_basis = floor, sl_basis + " · distância mínima"
+    sl = entry - td * sl_d
+    kind, val = EXIT_CFG.get(pcfg.get("exit", "tp2"), ("tp", 2.0))
+    trail = None
+    if kind == "tp":
+        tp1_d = tp2_d = val * sl_d
+        tp1_basis = tp2_basis = f"alvo fixo {val:g}R"
+        rule = f"saída no alvo de {val:g}R ou no stop"
+        rr1 = val
+    elif kind == "be":
+        tp1_d, tp2_d = sl_d, val * sl_d
+        tp1_basis, tp2_basis = "+1R: mova o stop para a entrada", f"alvo final {val:g}R"
+        rule = f"em +1R mova o stop para a entrada; alvo final {val:g}R"
+        rr1 = val
+    else:
+        trail = val * atr_h1
+        tp1_d, tp2_d = sl_d, 3 * sl_d
+        tp1_basis = f"+1R: ative o stop móvel ({inst.pips(trail):.0f} pips atrás do melhor preço)"
+        tp2_basis = "referência 3R (sem alvo fixo: o stop móvel decide a saída)"
+        rule = (f"sem alvo fixo: ao atingir +1R, mantenha o stop {inst.pips(trail):.0f} pips "
+                f"({val:g} ATR H1) atrás do melhor preço, nunca abaixo da entrada")
+        rr1 = 1.0
+    lots, risk_amount, _ = position_size(inst, sl_d, s.balance, s.risk_pct, prices, s.account_ccy)
+    return BreakoutPlan(entry, sl, entry + td * tp1_d, entry + td * tp2_d, inst.pips(sl_d), inst.pips(tp1_d),
+                        inst.pips(tp2_d), rr1, tp2_d / sl_d, lots, risk_amount, sl_basis, tp1_basis, tp2_basis,
+                        entry_type, valid_until, kind, trail, rule)
+
+
 def _plan(b: Breakout, extreme: float, zones, s: Settings, prices: dict, atr_h1: float,
           geo: dict | None = None) -> BreakoutPlan:
     inst, a, td, L = b.inst, b.atr, b.direction, b.level.price
@@ -701,16 +812,53 @@ class Tracker:
                 self.items.append(m)
                 b.is_new = True
                 new += 1
+            p = b.plan
+            if (p is not None and p.entry_type == "limite" and b.actionable and "limit" not in m
+                    and p.valid_until is not None):
+                # remember the suggested pending order so a later scan can say when price reaches it
+                m.update(limit=p.entry, valid_until=p.valid_until.isoformat(), sl=p.sl, grade=b.grade,
+                         side=b.side, filled=False)
             m.update(level=b.level.price, atr=b.atr, last=now.isoformat())
             b.first_seen = datetime.fromisoformat(m["first"])
         cutoff = now - self.ttl
-        self.items = [it for it in self.items if datetime.fromisoformat(it["last"]) >= cutoff]
+        self.items = [it for it in self.items if datetime.fromisoformat(it["last"]) >= cutoff
+                      or (it.get("limit") is not None and not it.get("filled")
+                          and datetime.fromisoformat(it["valid_until"]) >= now)]
+        self.save()
+        return new
+
+    def save(self) -> None:
         if self.path:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.items, f)
             os.replace(tmp, self.path)
-        return new
+
+    def check_fills(self, data: dict, now: datetime) -> list[dict]:
+        """Pending limit entries reached since they were suggested (bid/ask aware, M15 lows/highs)."""
+        fills = []
+        for it in self.items:
+            if it.get("limit") is None or it.get("filled"):
+                continue
+            first = pd.Timestamp(it["first"])
+            if now > datetime.fromisoformat(it["valid_until"]):
+                continue
+            d = data.get(it["sym"])
+            if d is None:
+                continue
+            half = (d.ask - d.bid) / 2
+            m15 = d.frames.get("M15")
+            bars = m15[m15.index + pd.Timedelta(minutes=15) > first] if m15 is not None else None
+            lo = min([d.ask] + ([float(bars.l.min()) + half] if bars is not None and len(bars) else []))
+            hi = max([d.bid] + ([float(bars.h.max()) - half] if bars is not None and len(bars) else []))
+            reached = lo <= it["limit"] if it["dir"] == 1 else hi >= it["limit"]
+            if reached:
+                it["filled"] = True
+                fills.append({"symbol": it["sym"], "tf": it["tf"], "direction": it["dir"], "side": it["side"],
+                              "limit": it["limit"], "sl": it["sl"], "grade": it["grade"], "time": now.isoformat()})
+        if fills:
+            self.save()
+        return fills
 
 
 # ---------------------------------------------------------------------------- scan
@@ -725,6 +873,7 @@ class BreakoutScan:
     new_count: int
     status: dict[str, str]
     errors: dict[str, str]
+    fills: list = field(default_factory=list)      # suggested limit entries reached since last scan
 
 
 def scan(provider, s: Settings, spec: str | None, now: datetime, state_path: str | None = None,
@@ -764,6 +913,8 @@ def scan(provider, s: Settings, spec: str | None, now: datetime, state_path: str
             errors[inst.symbol] = f"erro na detecção: {e}"
     found.sort(key=lambda b: (b.actionable, b.ev_r if b.ev_r is not None else b.quality / 100 - 0.5,
                               -b.bars_since), reverse=True)
-    new = Tracker(state_path).mark(found, now)
+    tracker = Tracker(state_path)
+    fills = tracker.check_fills(data, now)
+    new = tracker.mark(found, now)
     step(100, "Concluído")
-    return BreakoutScan(now, sess, found, len(targets), closed, new, ctx.status, errors)
+    return BreakoutScan(now, sess, found, len(targets), closed, new, ctx.status, errors, fills)

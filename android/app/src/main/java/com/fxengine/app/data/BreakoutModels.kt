@@ -16,6 +16,7 @@ data class BreakoutResult(
     val dataIssues: List<String>,
     val elapsedS: Double,
     val model: ModelInfo? = null,
+    val fills: List<FillEvent> = emptyList(),
 )
 
 /** Out-of-sample validation of the probability model (from the historical replay). */
@@ -28,6 +29,8 @@ data class ModelInfo(
     val newHit: Double,
     val newR: Double,
     val stopAtrH1: Double?,
+    val label: String = "",          // which timeframe/plan the numbers refer to
+    val trades: Int = 0,
 )
 
 data class BreakoutPlanUi(
@@ -35,7 +38,19 @@ data class BreakoutPlanUi(
     val slPips: Double, val tp1Pips: Double, val tp2Pips: Double,
     val rr1: Double, val rr2: Double, val lots: Double, val riskAmount: Double,
     val slBasis: String, val tp1Basis: String, val tp2Basis: String,
-)
+    val entryType: String = "mercado",     // mercado | limite | confirmacao
+    val entryText: String = "",
+    val validUntil: String = "",
+    val exitKind: String = "tp",           // tp | be | trail
+    val exitRule: String = "",
+    val trailPips: Double? = null,
+) {
+    val isLimit get() = entryType == "limite"
+}
+
+/** A suggested limit entry that price has reached since the alert. */
+data class FillEvent(val symbol: String, val tf: String, val side: String, val grade: String,
+                     val limit: String, val sl: String)
 
 data class BreakoutItem(
     val id: String,
@@ -111,6 +126,9 @@ private fun parseItem(o: JSONObject): BreakoutItem {
             p.s("entry"), p.s("sl"), p.s("tp1"), p.s("tp2"), p.d("sl_pips"), p.d("tp1_pips"), p.d("tp2_pips"),
             p.d("rr1"), p.d("rr2"), p.d("lots"), p.d("risk_amount"), p.s("sl_basis"), p.s("tp1_basis"),
             p.s("tp2_basis"),
+            entryType = p.s("entry_type").ifBlank { "mercado" }, entryText = p.s("entry_text"),
+            validUntil = p.s("valid_until"), exitKind = p.s("exit_kind").ifBlank { "tp" },
+            exitRule = p.s("exit_rule"), trailPips = if (p.isNull("trail_pips")) null else p.d("trail_pips"),
         ),
         orderText = o.s("order_text"),
     )
@@ -129,19 +147,12 @@ fun parseBreakouts(raw: String): BreakoutOutput = try {
                 newCount = j.optInt("new_count"), newActionable = j.optInt("new_actionable"),
                 items = if (arr == null) emptyList() else List(arr.length()) { parseItem(arr.getJSONObject(it)) },
                 dataIssues = j.optJSONArray("data_issues").strings(), elapsedS = j.d("elapsed_s"),
-                model = j.optJSONObject("model")?.let { m ->
-                    val t = m.optJSONObject("test")
-                    val old = t?.optJSONObject("acionaveis_regra_antiga")
-                    val new = t?.optJSONObject("acionaveis_modelo_novo")
-                    val per = m.optJSONArray("period")
-                    val geo = m.optJSONObject("geometry")
-                    if (old == null || new == null) null else ModelInfo(
-                        events = m.optInt("events"),
-                        periodFrom = per?.optString(0)?.take(10) ?: "",
-                        periodTo = per?.optString(1)?.take(10) ?: "",
-                        oldHit = old.d("acerto"), oldR = old.d("r"), newHit = new.d("acerto"), newR = new.d("r"),
-                        stopAtrH1 = if (geo == null || geo.isNull("stop_atr_h1")) null else geo.d("stop_atr_h1"),
-                    )
+                model = j.optJSONObject("model")?.let { m -> parseModelInfo(m) },
+                fills = j.optJSONArray("fills").let { arr ->
+                    if (arr == null) emptyList() else List(arr.length()) {
+                        val f = arr.getJSONObject(it)
+                        FillEvent(f.s("symbol"), f.s("tf"), f.s("side"), f.s("grade"), f.s("limit"), f.s("sl"))
+                    }
                 },
             ),
             raw,
@@ -155,3 +166,24 @@ private val GRADE_ORDER = listOf("D", "C", "B", "A", "A+")
 
 fun gradeAtLeast(grade: String, min: String): Boolean =
     GRADE_ORDER.indexOf(grade) >= GRADE_ORDER.indexOf(min).coerceAtLeast(0)
+
+private fun parseModelInfo(m: JSONObject): ModelInfo? {
+    val t = m.optJSONObject("test") ?: return null
+    val per = m.optJSONArray("period")
+    val from = per?.optString(0)?.take(10) ?: ""
+    val to = per?.optString(1)?.take(10) ?: ""
+    // version 1: single model
+    t.optJSONObject("acionaveis_regra_antiga")?.let { old ->
+        val new = t.optJSONObject("acionaveis_modelo_novo") ?: return null
+        val geo = m.optJSONObject("geometry")
+        return ModelInfo(m.optInt("events"), from, to, old.d("acerto"), old.d("r"), new.d("acerto"), new.d("r"),
+            if (geo == null || geo.isNull("stop_atr_h1")) null else geo.d("stop_atr_h1"), "", new.optInt("n"))
+    }
+    // version 2: one test section per timeframe; show the H1 one (the validated, enabled setup)
+    val tf = if (t.has("H1")) "H1" else t.keys().asSequence().firstOrNull() ?: return null
+    val sec = t.getJSONObject(tf)
+    val old = sec.optJSONObject("referencia_app_1_2") ?: return null
+    val new = sec.optJSONObject("plano_com_filtro_A") ?: return null
+    return ModelInfo(m.optInt("events"), from, to, old.d("acerto"), old.d("r"), new.d("acerto"), new.d("r"),
+        null, tf, new.optInt("n"))
+}

@@ -90,7 +90,8 @@ def test_detect_end_to_end_builds_a_valid_plan():
     b = ups[0]
     p = b.plan
     assert p.sl < p.entry < p.tp1 < p.tp2
-    assert p.entry == data.ask and p.rr1 >= 1.0 and p.lots > 0
+    assert (p.entry_type == "mercado" and p.entry == data.ask) or (p.entry_type == "limite" and p.entry < data.ask)
+    assert p.rr1 >= 1.0 and p.lots > 0
     assert 0 <= b.quality <= 100 and b.grade in ("A+", "A", "B", "C", "D")
 
 
@@ -202,3 +203,65 @@ def test_model_geometry_drives_the_plan(tmp_path):
         sl_dist = abs(b.plan.entry - b.plan.sl)
         assert sl_dist >= atr_h1 - 1e-9
         assert b.plan.rr1 == pytest.approx(2.0)
+
+
+def _v2_model(tmp_path, h1_enabled=True, m15_enabled=False):
+    names = list(bk.FEATURES)
+
+    def section(enabled):
+        return {"features": names, "mean": [0.0] * len(names), "std": [1.0] * len(names),
+                "coef": [0.0] * len(names), "intercept": 0.0,
+                "ev_grades": [[0.2, "A+"], [0.0, "A"], [-0.2, "B"], [-0.4, "C"]], "ev_actionable": 0.0,
+                "enabled": enabled, "win_r": 1.6, "loss_r": -1.0,
+                "plan": {"entry": "reteste", "stop": "n10", "exit": "tr10", "window": 6}}
+    path = tmp_path / "v2.json"
+    path.write_text(json.dumps({"version": 2, "models": {"H1": section(h1_enabled), "M15": section(m15_enabled)},
+                                "info": {"events": 10}}))
+    return bk.load_model(str(path))
+
+
+def test_v2_model_set_and_validated_plan(tmp_path):
+    ms = _v2_model(tmp_path)
+    assert isinstance(ms, bk.ModelSet) and ms.for_tf("H1").enabled and not ms.for_tf("M15").enabled
+    c = ranging()
+    c[-4:] = [1.1016, 1.1022, 1.1026, 1.1029]
+    data = _instrument_data(c)
+    now = (data.frames["M15"].index[-1] + timedelta(minutes=15, seconds=5)).to_pydatetime()
+    out = bk.detect(data, now, Settings(), {"EURUSD": data.price}, None, [], sessions.state(now), model=ms)
+    assert out
+    for b in out:
+        p = b.plan
+        assert p.exit_kind == "trail" and p.trail and p.trail > 0
+        assert p.entry_type in ("limite", "mercado")
+        if p.entry_type == "limite":
+            assert p.valid_until is not None and p.valid_until > now
+            assert (p.entry < data.ask) if b.direction == 1 else (p.entry > data.bid)
+        assert (p.sl < p.entry) if b.direction == 1 else (p.sl > p.entry)
+        assert b.ev_r == pytest.approx(b.prob * 1.6 + (1 - b.prob) * -1.0)
+        if b.tf == "M15":                                   # disabled timeframe: never A/A+
+            assert b.grade not in ("A+", "A") and not b.actionable
+
+
+def test_tracker_reports_limit_fill_once(tmp_path):
+    ms = _v2_model(tmp_path)
+    c = ranging()
+    c[-4:] = [1.1016, 1.1022, 1.1026, 1.1029]
+    data = _instrument_data(c)
+    now = (data.frames["M15"].index[-1] + timedelta(minutes=15, seconds=5)).to_pydatetime()
+    out = bk.detect(data, now, Settings(), {"EURUSD": data.price}, None, [], sessions.state(now), model=ms)
+    lim = [b for b in out if b.plan.entry_type == "limite"]
+    if not lim:
+        pytest.skip("no pending-limit event in this fixture")
+    for b in lim:
+        b.actionable = True
+    path = str(tmp_path / "state.json")
+    tr = bk.Tracker(path)
+    tr.mark(lim, now)
+    assert tr.check_fills({"EURUSD": data}, now) == []          # price still above the retest
+    b0 = lim[0]
+    later = now + timedelta(minutes=30)
+    px = b0.plan.entry - b0.direction * 0.0002
+    filled = InstrumentData(data.inst, data.frames, px, px - 0.00005, px + 0.00005, later, "teste", True, [])
+    fills = bk.Tracker(path).check_fills({"EURUSD": filled}, later)
+    assert len(fills) >= 1 and fills[0]["symbol"] == "EURUSD"
+    assert bk.Tracker(path).check_fills({"EURUSD": filled}, later) == []   # reported once

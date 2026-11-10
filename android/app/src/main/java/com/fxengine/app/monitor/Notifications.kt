@@ -76,13 +76,31 @@ object Notifications {
         }
     }
 
+    fun fill(ctx: Context, f: com.fxengine.app.data.FillEvent) {
+        if (!canPost(ctx)) return
+        val n = NotificationCompat.Builder(ctx, CH_ALERTS)
+            .setSmallIcon(R.drawable.ic_stat_breakout)
+            .setContentTitle("✅ Entrada atingida: ${f.side} ${f.symbol} em ${f.limit}")
+            .setContentText("O preço chegou na ordem limite sugerida (${f.tf}, nota ${f.grade}). Stop ${f.sl}.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(ctx, ("fill" + f.symbol + f.limit).hashCode()))
+            .build()
+        try {
+            NotificationManagerCompat.from(ctx).notify(("fill" + f.symbol + f.limit).hashCode(), n)
+        } catch (_: SecurityException) {
+        }
+    }
+
     fun alert(ctx: Context, b: BreakoutItem) {
         if (!canPost(ctx)) return
         val arrow = if (b.isBuy) "▲" else "▼"
         val title = "$arrow ${b.side} ${b.symbol} · ${b.statusLabel.lowercase()} (${b.tf}) · nota ${b.grade}"
         val odds = if (b.prob != null && b.evR != null)
-            "\nAlvo 1 antes do stop: ${(b.prob * 100).toInt()}% · expectativa ${"%+.2f".format(b.evR)}R" else ""
-        val body = "${b.headline}\nEntrada ${b.plan.entry} · stop ${b.plan.sl} · alvo ${b.plan.tp1} (${"%.1f".format(b.plan.rr1)}R)$odds"
+            "\nNo lucro em ${(b.prob * 100).toInt()}% dos casos parecidos · expectativa ${"%+.2f".format(b.evR)}R" else ""
+        val entry = if (b.plan.isLimit) "Ordem limite em ${b.plan.entry} (até ${b.plan.validUntil})" else "Entrada ${b.plan.entry}"
+        val exit = if (b.plan.exitKind == "trail") "+1R ${b.plan.tp1} → stop móvel" else "alvo ${b.plan.tp1} (${"%.1f".format(b.plan.rr1)}R)"
+        val body = "${b.headline}\n$entry · stop ${b.plan.sl} · $exit$odds"
         val n = NotificationCompat.Builder(ctx, CH_ALERTS)
             .setSmallIcon(R.drawable.ic_stat_breakout)
             .setContentTitle(title)

@@ -98,12 +98,17 @@ def render_breakouts(r, min_grade: str = "B", only_new: bool = False) -> str:
         p, i = b.plan, b.inst
         flag = "NOVO " if b.is_new else "     "
         act = "★" if b.actionable else ("·" if not b.blocked else "x")
-        score = (f"P(alvo1) {b.prob * 100:3.0f}% · {b.ev_r:+.2f}R" if b.prob is not None
+        score = (f"lucro {b.prob * 100:3.0f}% · {b.ev_r:+.2f}R" if b.prob is not None
                  else f"nota ({b.quality:4.0f})")
         lines.append(f" {act} {flag}{b.symbol:<7} {b.tf:<3} {b.side:<6} {STATUS_LABEL[b.status]:<17} "
                      f"{b.grade:<2} {score}  nível {i.fmt(b.level.price)} [{b.level.label[:44]}]")
-        lines.append(f"         entrada {i.fmt(p.entry)}  stop {i.fmt(p.sl)}  alvo1 {i.fmt(p.tp1)} ({p.rr1:.1f}R)  "
-                     f"alvo2 {i.fmt(p.tp2)} ({p.rr2:.1f}R)  lote {p.lots:.2f}")
+        ent = (f"LIMITE {i.fmt(p.entry)} até {p.valid_until:%H:%M} UTC" if p.entry_type == "limite"
+               else f"entrada {i.fmt(p.entry)}" + (" (após confirmação)" if p.entry_type == "confirmacao" else ""))
+        if p.exit_kind == "trail":
+            ext = f"+1R {i.fmt(p.tp1)} → stop móvel {i.pips(p.trail):.0f} pips"
+        else:
+            ext = f"alvo1 {i.fmt(p.tp1)} ({p.rr1:.1f}R)  alvo2 {i.fmt(p.tp2)} ({p.rr2:.1f}R)"
+        lines.append(f"         {ent}  stop {i.fmt(p.sl)}  {ext}  lote {p.lots:.2f}")
         if b.cons:
             lines.append(f"         atenção: {'; '.join(b.cons[:2])}")
     return "\n".join(lines)

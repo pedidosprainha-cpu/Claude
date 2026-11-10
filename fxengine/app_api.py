@@ -16,6 +16,11 @@ from zoneinfo import ZoneInfo
 from . import breakouts as bk
 from .config import Settings
 from .engine import Engine, Opportunity, ScanResult
+from .instruments import UNIVERSE
+
+
+def UNIVERSE_FMT(symbol: str, price: float) -> str:  # noqa: N802 - small formatting helper
+    return UNIVERSE[symbol].fmt(price)
 
 DIAS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
 COMP = {"technical": "Técnico", "quant": "Quant", "strength": "Força", "fundamental": "Fundamental"}
@@ -182,18 +187,41 @@ def run(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets
 
 # ---------------------------------------------------------------------------- breakouts
 
-def breakout_order_text(b: bk.Breakout) -> str:
+def _entry_line(b: bk.Breakout, tz: ZoneInfo | None = None) -> str:
     p, i = b.plan, b.inst
-    return "\n".join([
-        f"{b.side} {b.symbol} a mercado — {bk.STATUS_LABEL[b.status].lower()} ({b.tf})",
+    until = p.valid_until.astimezone(tz).strftime("%H:%M") if (p.valid_until and tz) else (
+        p.valid_until.strftime("%H:%M UTC") if p.valid_until else "")
+    if p.entry_type == "limite":
+        return f"Ordem LIMITE de {b.side.lower()} em {i.fmt(p.entry)} (reteste do nível) — válida até {until}"
+    if p.entry_type == "confirmacao":
+        return (f"{b.side.capitalize()} a mercado no fechamento do próximo candle {b.tf} (até {until}) "
+                f"somente se ele fechar a favor; referência {i.fmt(p.entry)}")
+    return f"{b.side.capitalize()} a mercado em {i.fmt(p.entry)}"
+
+
+def breakout_order_text(b: bk.Breakout, tz: ZoneInfo | None = None) -> str:
+    p, i = b.plan, b.inst
+    lines = [
+        f"{b.side} {b.symbol} — {bk.STATUS_LABEL[b.status].lower()} ({b.tf})",
         f"Nível: {i.fmt(b.level.price)} ({b.level.label})",
-        f"Entrada: {i.fmt(p.entry)}",
+        f"Entrada: {_entry_line(b, tz)}",
         f"Stop loss: {i.fmt(p.sl)} ({p.sl_pips:.1f} pips)",
-        f"Alvo 1: {i.fmt(p.tp1)} ({p.rr1:.2f}R) - realizar 50% e stop na entrada",
-        f"Alvo 2: {i.fmt(p.tp2)} ({p.rr2:.2f}R)",
-        f"Lote: {p.lots:.2f} (risco US$ {p.risk_amount:,.2f})",
-    ] + ([f"Probabilidade histórica do alvo 1: {b.prob * 100:.0f}% · expectativa {b.ev_r:+.2f}R"]
-         if b.prob is not None else []))
+    ]
+    if p.exit_kind == "trail":
+        lines += [f"+1R em {i.fmt(p.tp1)}: ativar stop móvel",
+                  f"Saída: {p.exit_rule}"]
+    elif p.exit_kind == "be":
+        lines += [f"+1R em {i.fmt(p.tp1)}: stop para a entrada", f"Alvo: {i.fmt(p.tp2)} ({p.rr2:.2f}R)"]
+    elif p.exit_rule:
+        lines += [f"Alvo: {i.fmt(p.tp1)} ({p.rr1:.2f}R)"]
+    else:
+        lines += [f"Alvo 1: {i.fmt(p.tp1)} ({p.rr1:.2f}R) - realizar 50% e stop na entrada",
+                  f"Alvo 2: {i.fmt(p.tp2)} ({p.rr2:.2f}R)"]
+    lines.append(f"Lote: {p.lots:.2f} (risco US$ {p.risk_amount:,.2f})")
+    if b.prob is not None:
+        lines.append(f"Histórico de sinais parecidos: {b.prob * 100:.0f}% terminaram no lucro · "
+                     f"expectativa {b.ev_r:+.2f}R")
+    return "\n".join(lines)
 
 
 def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
@@ -233,12 +261,16 @@ def breakout_dict(b: bk.Breakout, tz: ZoneInfo, now) -> dict:
         "cons": b.cons,
         "hist": {"n": b.hist_n, "wins": b.hist_wins, "p": _num(b.hist_p, 3)} if b.hist_n >= 8 else None,
         "plan": {
+            "entry_type": p.entry_type, "entry_text": _entry_line(b, tz),
+            "valid_until": p.valid_until.astimezone(tz).strftime("%H:%M") if p.valid_until else "",
+            "exit_kind": p.exit_kind, "exit_rule": p.exit_rule,
+            "trail_pips": _num(i.pips(p.trail), 1) if p.trail else None,
             "entry": i.fmt(p.entry), "sl": i.fmt(p.sl), "tp1": i.fmt(p.tp1), "tp2": i.fmt(p.tp2),
             "sl_pips": _num(p.sl_pips, 1), "tp1_pips": _num(p.tp1_pips, 1), "tp2_pips": _num(p.tp2_pips, 1),
             "rr1": _num(p.rr1), "rr2": _num(p.rr2), "lots": _num(p.lots), "risk_amount": _num(p.risk_amount),
             "sl_basis": p.sl_basis, "tp1_basis": p.tp1_basis, "tp2_basis": p.tp2_basis,
         },
-        "order_text": breakout_order_text(b),
+        "order_text": breakout_order_text(b, tz),
     }
 
 
@@ -262,9 +294,14 @@ def breakouts_result_dict(r: bk.BreakoutScan, tz_name: str = "America/Sao_Paulo"
         "new_actionable": sum(1 for b in r.breakouts if b.is_new and b.actionable),
         "new_unblocked": sum(1 for b in r.breakouts if b.is_new and not b.blocked),
         "breakouts": items,
+        "fills": [{"symbol": f["symbol"], "tf": f["tf"], "side": f["side"], "grade": f["grade"],
+                   "limit": UNIVERSE_FMT(f["symbol"], f["limit"]), "sl": UNIVERSE_FMT(f["symbol"], f["sl"])}
+                  for f in r.fills],
         "model": None if model is None else {
             "events": model.info.get("events"), "period": model.info.get("period"),
-            "test": model.info.get("test"), "geometry": model.geometry},
+            "test": model.info.get("test"),
+            "geometry": getattr(model, "geometry", None),
+            "version": 2 if isinstance(model, bk.ModelSet) else 1},
         "data_issues": issues,
         "elapsed_s": _num(elapsed, 1),
     }

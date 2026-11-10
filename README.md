@@ -133,19 +133,29 @@ A nota (0–100) soma vários fatores:
 - eventos de alto impacto, liquidez da sessão e spread em relação ao stop;
 - taxa histórica de continuação de rompimentos naquele ativo e timeframe.
 
-**Precisão validada.** O detector foi reconstituído no histórico: cerca de 26 mil alertas em
-~2,5 meses, sem olhar o futuro e com spread. Um modelo logístico calibrado sobre as features
-de cada alerta dá a probabilidade real de o alvo 1 vir antes do stop.
+**Precisão validada e plano de entrada.** O detector foi reconstituído no histórico, sem olhar
+o futuro e com spread: cerca de **100 mil rompimentos H1 em ~3 anos** e 26 mil M15 em ~2
+meses. Um laboratório testou 112 combinações de entrada, stop e saída. Um modelo calibrado por
+timeframe ordena os alertas.
 
-- A geometria do trade (stop ≥ 1,5 ATR do H1) e os cortes de nota foram escolhidos por
-  validação walk-forward.
-- No período de teste, que o modelo não viu, os melhores (A/A+) atingiram o alvo 1 em **53%**
-  das vezes, contra **30%** da regra anterior.
-- A expectativa melhorou de −0,14R para −0,02R por trade: ainda ≈ zero depois do spread.
-  Os alertas servem como oportunidade a confirmar, não como sinal automático.
+Plano escolhido por walk-forward:
 
-Detalhes em [`research/RESULTADOS_ROMPIMENTOS.md`](research/RESULTADOS_ROMPIMENTOS.md);
-como retreinar em [`research/README.md`](research/README.md).
+- **Entrada:** ordem limite no reteste do nível rompido (válida por 6h no H1).
+- **Stop:** 1 ATR do H1 além do nível.
+- **Saída:** a partir de +1R, stop móvel 1 ATR atrás do melhor preço, sem alvo fixo.
+
+Resultado dos 10% melhores alertas H1 (nota A/A+):
+
+| | trades | no lucro | R médio por trade |
+|---|---|---|---|
+| walk-forward (5 blocos de ~3,6 meses) | 5.698 | – | **+0,080** (5 de 5 blocos positivos) |
+| teste final (últimos ~3,6 meses, intocado) | 920 | **57,6%** | **+0,102** |
+| plano anterior (app 1.2), mesmo período | 13.721 | 29,5% | −0,151 |
+
+Os rompimentos M15 não passaram na validação: walk-forward negativo em todos os blocos. Eles
+aparecem só como informação, sem nota A nem alerta. Detalhes em
+`research/RESULTADOS_ENTRADAS.json`; como refazer em [`research/README.md`](research/README.md).
+É desempenho histórico, simulado com spreads típicos: não garante resultado futuro.
 
 O plano tem stop do outro lado do nível, alvos na próxima zona e na projeção da altura do
 range, e lote pelo risco escolhido. Um rastreador em disco lembra os eventos já vistos, para

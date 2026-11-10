@@ -235,9 +235,11 @@ def replay(sym: str, m15: pd.DataFrame, h1: pd.DataFrame, strength: dict, start:
             if lab is None or geo is None:
                 continue
             row = {"symbol": sym, "time": now.isoformat(), "tf": b.tf, "status": b.status,
-                   "kind": b.level.kind, "direction": b.direction, "grade_old": b.grade,
-                   "score_old": b.heuristic, "actionable_old": int(b.actionable),
-                   "rr1": b.plan.rr1, "rr2": b.plan.rr2, "extended": int(b.extended)}
+                   "kind": b.level.kind, "direction": b.direction, "break_dir": b.break_dir,
+                   "grade_old": b.grade, "score_old": b.heuristic, "actionable_old": int(b.actionable),
+                   "rr1": b.plan.rr1, "rr2": b.plan.rr2, "extended": int(b.extended),
+                   "level": b.level.price, "entry": b.plan.entry, "mid": b.price, "atr_tf": b.atr,
+                   "extreme": b.extreme, "bar_i": i}
             row.update({f"f_{k}": v for k, v in b.features.items()})
             row.update(lab)
             row.update(geo)

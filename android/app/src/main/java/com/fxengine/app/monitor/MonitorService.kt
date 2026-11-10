@@ -68,6 +68,7 @@ class MonitorService : Service() {
                     .filter { it.isNew && !it.blocked && gradeAtLeast(it.grade, settings.alertMinGrade) }
                     .take(5)
                     .forEach { Notifications.alert(this, it) }
+                res.fills.take(5).forEach { Notifications.fill(this, it) }
             }
             val next = System.currentTimeMillis() + interval
             BreakoutMonitor.setNext(next)

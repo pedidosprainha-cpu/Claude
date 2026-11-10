@@ -29,6 +29,11 @@ A última análise fica salva; se ela tiver mais de 5 minutos o app avisa para a
 
 ### Monitor de rompimentos
 
+- Os alertas A/A+ trazem o plano validado no histórico:
+  - **entrada:** ordem limite no reteste do nível, com horário de validade;
+  - **stop:** 1 ATR do H1 além do nível;
+  - **saída:** stop móvel depois de +1R.
+- Quando o preço chega na ordem limite sugerida, chega a notificação **"Entrada atingida"**.
 - Na primeira vez o Android pede permissão de **notificações**: aceite para receber os alertas.
 - Enquanto o monitor estiver ligado aparece um aviso fixo "Monitorando rompimentos", com o
   botão **Parar**. Tocar em um alerta abre direto a aba Rompimentos.

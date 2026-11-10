@@ -293,26 +293,29 @@ private fun ValidationCard(m: com.fxengine.app.data.ModelInfo) {
     SectionCard("Precisão validada no histórico") {
         Text(
             "${"%,d".format(m.events).replace(',', '.')} rompimentos reconstituídos (${m.periodFrom} a ${m.periodTo}), " +
-                "com spread, avaliados em dias que o modelo não viu:",
+                "com spread, avaliados em meses que o modelo não viu" +
+                (if (m.label.isNotBlank()) " (rompimentos ${m.label}, ${m.trades} trades no teste):" else ":"),
             color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp,
         )
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("Antes", color = Fx.Muted, fontSize = 12.sp)
-                Text("${(m.oldHit * 100).toInt()}% no alvo 1", color = Fx.Text, fontWeight = FontWeight.Bold)
+                Text("${(m.oldHit * 100).toInt()}% ${if (m.label.isBlank()) "no alvo 1" else "no lucro"}", color = Fx.Text, fontWeight = FontWeight.Bold)
                 Text("${if (m.oldR >= 0) "+" else ""}${m.oldR.f()}R por trade", color = Fx.Sell, fontSize = 13.sp)
             }
             Column(Modifier.weight(1f)) {
                 Text("Agora (nota A/A+)", color = Fx.Muted, fontSize = 12.sp)
-                Text("${(m.newHit * 100).toInt()}% no alvo 1", color = Fx.Buy, fontWeight = FontWeight.Bold)
+                Text("${(m.newHit * 100).toInt()}% ${if (m.label.isBlank()) "no alvo 1" else "no lucro"}", color = Fx.Buy, fontWeight = FontWeight.Bold)
                 Text("${if (m.newR >= 0) "+" else ""}${m.newR.f()}R por trade",
                     color = if (m.newR >= 0) Fx.Buy else Fx.Warn, fontSize = 13.sp)
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "A precisão subiu muito, mas a expectativa ainda fica perto de zero depois do spread: use os alertas " +
+            if (m.newR > 0.05) "Resultado histórico positivo no período de teste, mas é um histórico curto: opere com " +
+                "risco pequeno e acompanhe. Desempenho passado não garante resultado futuro."
+            else "A precisão subiu, mas a expectativa ainda fica perto de zero depois do spread: use os alertas " +
                 "como oportunidade a confirmar no gráfico, não como ordem automática.",
             color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
         )
@@ -356,9 +359,15 @@ fun BreakoutCard(b: BreakoutItem, onClick: () -> Unit) {
                     (if (b.isTrap) "Falso rompimento de " else "Nível ") + "${b.level} · ${b.levelLabel}",
                     color = Fx.Text.copy(alpha = 0.9f), fontSize = 13.sp, lineHeight = 17.sp, maxLines = 2,
                 )
+                if (b.plan.isLimit) {
+                    Text(
+                        "Entrada: limite em ${b.plan.entry} até ${b.plan.validUntil}",
+                        color = Fx.Gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 if (b.prob != null && b.evR != null) {
                     Text(
-                        "Alvo 1 antes do stop: ${(b.prob * 100).toInt()}% · expectativa ${if (b.evR >= 0) "+" else ""}${b.evR.f()}R",
+                        "No lucro em ${(b.prob * 100).toInt()}% dos casos parecidos · expectativa ${if (b.evR >= 0) "+" else ""}${b.evR.f()}R",
                         color = if (b.evR >= 0.1) Fx.Buy else if (b.evR >= 0) Fx.Text else Fx.Warn,
                         fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                     )
@@ -402,15 +411,46 @@ fun BreakoutDetail(b: BreakoutItem) {
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(color = Fx.Outline)
             PlanRow("Nível", b.level, b.levelLabel)
-            PlanRow("Entrada", p.entry, (if (b.isBuy) "compra no ask" else "venda no bid") + " · bid ${b.bid} / ask ${b.ask}")
+            when (p.entryType) {
+                "limite" -> PlanRow(
+                    "Entrada", p.entry,
+                    "ORDEM LIMITE de ${b.side.lowercase()} no reteste do nível · válida até ${p.validUntil} " +
+                        "(depois, cancele) · agora bid ${b.bid} / ask ${b.ask}",
+                    Fx.Gold,
+                )
+                "confirmacao" -> PlanRow(
+                    "Entrada", p.entry,
+                    "a mercado só se o próximo candle ${b.tf} fechar a favor (até ${p.validUntil})",
+                    Fx.Gold,
+                )
+                else -> PlanRow("Entrada", p.entry, (if (b.isBuy) "compra no ask" else "venda no bid") + " · bid ${b.bid} / ask ${b.ask}")
+            }
             PlanRow("Stop", p.sl, "${p.slPips.f(1)} pips · ${p.slBasis}", Fx.Sell)
-            PlanRow("Alvo 1", p.tp1, "${p.tp1Pips.f(1)} pips · ${p.rr1.f()}R · ${p.tp1Basis} · realizar 50%", Fx.Buy)
-            PlanRow("Alvo 2", p.tp2, "${p.tp2Pips.f(1)} pips · ${p.rr2.f()}R · ${p.tp2Basis}", Fx.Buy)
+            when (p.exitKind) {
+                "trail" -> {
+                    PlanRow("+1R", p.tp1, "${p.tp1Pips.f(1)} pips · a partir daqui ative o stop móvel", Fx.Buy)
+                    PlanRow(
+                        "Stop móvel", "${(p.trailPips ?: 0.0).f(0)} pips",
+                        "atrás do melhor preço, nunca abaixo da entrada · sem alvo fixo (deixa o rompimento correr)",
+                        Fx.Buy,
+                    )
+                }
+                "be" -> {
+                    PlanRow("+1R", p.tp1, "${p.tp1Pips.f(1)} pips · mova o stop para a entrada", Fx.Buy)
+                    PlanRow("Alvo", p.tp2, "${p.tp2Pips.f(1)} pips · ${p.rr2.f()}R", Fx.Buy)
+                }
+                else -> if (p.exitRule.isNotBlank()) {
+                    PlanRow("Alvo", p.tp1, "${p.tp1Pips.f(1)} pips · ${p.rr1.f()}R · ${p.tp1Basis}", Fx.Buy)
+                } else {
+                    PlanRow("Alvo 1", p.tp1, "${p.tp1Pips.f(1)} pips · ${p.rr1.f()}R · ${p.tp1Basis} · realizar 50%", Fx.Buy)
+                    PlanRow("Alvo 2", p.tp2, "${p.tp2Pips.f(1)} pips · ${p.rr2.f()}R · ${p.tp2Basis}", Fx.Buy)
+                }
+            }
             PlanRow("Lote", p.lots.f(2), "risco ${money(p.riskAmount)}")
             if (b.prob != null && b.evR != null) {
                 PlanRow(
-                    "Prob. alvo 1", "${(b.prob * 100).toInt()}%",
-                    "probabilidade calibrada em rompimentos históricos parecidos · expectativa " +
+                    "No lucro", "${(b.prob * 100).toInt()}%",
+                    "dos rompimentos históricos parecidos operados com este plano · expectativa " +
                         "${if (b.evR >= 0) "+" else ""}${b.evR.f()}R por trade",
                     if (b.evR >= 0.1) Fx.Buy else if (b.evR >= 0) Fx.Text else Fx.Warn,
                 )
@@ -440,9 +480,12 @@ fun BreakoutDetail(b: BreakoutItem) {
         if (b.cons.isNotEmpty()) SectionCard("Atenção") { Bullets(b.cons, Fx.Warn, 6) }
         SectionCard("Como ler") {
             Text(
-                "A probabilidade vem de um modelo calibrado em dezenas de milhares de rompimentos reconstituídos no " +
-                    "histórico (com spread): é a chance real de o alvo 1 vir antes do stop. A nota é relativa: " +
-                    "A+ = melhores 3% dos rompimentos, A = melhores 10%, B = 25%, C = 50%. " +
+                "Plano validado em ~100 mil rompimentos H1 de 3 anos (com spread): entrada com ORDEM LIMITE no " +
+                    "reteste do nível rompido (válida por algumas horas; se não executar, cancele), stop 1 ATR H1 além " +
+                    "do nível e, a partir de +1R, stop móvel 1 ATR H1 atrás do melhor preço, sem alvo fixo. " +
+                    "A porcentagem é a chance histórica de casos parecidos terminarem no lucro com esse plano. " +
+                    "Nota relativa: A+ = melhores 3%, A = melhores 10%. Rompimentos M15 não passaram na validação " +
+                    "e aparecem só como informação. Quando o preço chega na sua ordem limite, o monitor avisa. " +
                     "ROMPENDO AGORA (pré-alerta): o preço passou do nível e o candle ainda não fechou — o alerta sai no fechamento. CONFIRMADO: um candle fechou além " +
                     "do nível. RETESTE: depois de romper, o preço voltou ao nível e segurou. FALSO ROMPIMENTO: rompeu e " +
                     "fechou de volta — o trade é na direção contrária (armadilha). ESTICADO: o preço já se afastou demais; " +
