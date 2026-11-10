@@ -28,6 +28,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -60,8 +65,15 @@ import kotlinx.coroutines.delay
 val LocalStaticUi = staticCompositionLocalOf { false }
 
 @Composable
-fun HomeScreen(state: UiState, onAnalyze: () -> Unit, onDismissError: () -> Unit) {
+fun HomeScreen(
+    state: UiState,
+    onAnalyze: () -> Unit,
+    onDismissError: () -> Unit,
+    onSettings: (com.fxengine.app.data.AppSettings) -> Unit = {},
+) {
     val haptic = LocalHapticFeedback.current
+    var picking by remember { mutableStateOf(false) }
+    val single = state.settings.homeMode == "asset"
     val view = LocalView.current
     val scroll = rememberScrollState()
 
@@ -80,8 +92,11 @@ fun HomeScreen(state: UiState, onAnalyze: () -> Unit, onDismissError: () -> Unit
     ) {
         Spacer(Modifier.height(12.dp))
         Header(state)
-        Spacer(Modifier.height(28.dp))
-        AnalyzeButton(state.running, state.progress, onClick = {
+        Spacer(Modifier.height(14.dp))
+        ModeSelector(state.settings, enabled = !state.running, onSettings = onSettings, onPick = { picking = true })
+        Spacer(Modifier.height(18.dp))
+        AnalyzeButton(state.running, state.progress, label = if (single) state.settings.focusSymbol else "ANALISAR",
+            onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             onAnalyze()
         })
@@ -89,11 +104,13 @@ fun HomeScreen(state: UiState, onAnalyze: () -> Unit, onDismissError: () -> Unit
         if (state.running) {
             Text(state.step, color = Fx.Text, fontSize = 15.sp, textAlign = TextAlign.Center)
             Spacer(Modifier.height(4.dp))
-            Text("Leva de 30 s a 1 min. Mantenha o app aberto.", color = Fx.Muted, fontSize = 12.sp)
+            Text(if (single) "Leva cerca de 10 a 20 s. Mantenha o app aberto."
+                 else "Leva de 30 s a 1 min. Mantenha o app aberto.", color = Fx.Muted, fontSize = 12.sp)
         } else {
             val s = state.settings
             Text(
-                "Toque para analisar ${assetsLabel(s.assets)} agora",
+                if (single) "Toque para a análise completa de ${s.focusSymbol} (${com.fxengine.app.data.Catalog.name(s.focusSymbol)})"
+                else "Toque para analisar ${assetsLabel(s.assets)} agora",
                 color = Fx.Text, fontSize = 15.sp, textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(4.dp))
@@ -122,17 +139,71 @@ fun HomeScreen(state: UiState, onAnalyze: () -> Unit, onDismissError: () -> Unit
             Spacer(Modifier.height(12.dp))
         }
 
-        state.result?.let { r ->
-            ResultBlock(r, state.resultAtMillis, running = state.running)
+        if (single) {
+            state.asset?.takeIf { it.symbol == state.settings.focusSymbol }?.let { a -> AssetDetail(a) }
+        } else {
+            state.result?.let { r ->
+                ResultBlock(r, state.resultAtMillis, running = state.running)
+            }
         }
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (picking) {
+        AssetPickerSheet(
+            title = "Escolha o ativo", selected = setOf(state.settings.focusSymbol), multi = false,
+            onDismiss = { picking = false },
+            onConfirm = { list ->
+                picking = false
+                list.firstOrNull()?.let { onSettings(state.settings.copy(homeMode = "asset", focusSymbol = it)) }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModeSelector(
+    settings: com.fxengine.app.data.AppSettings,
+    enabled: Boolean,
+    onSettings: (com.fxengine.app.data.AppSettings) -> Unit,
+    onPick: () -> Unit,
+) {
+    val opts = listOf("all" to "Todos os ativos", "asset" to "Um ativo")
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        opts.forEachIndexed { i, (key, label) ->
+            SegmentedButton(
+                selected = settings.homeMode == key,
+                onClick = { onSettings(settings.copy(homeMode = key)) },
+                enabled = enabled,
+                shape = SegmentedButtonDefaults.itemShape(i, opts.size),
+            ) { Text(label) }
+        }
+    }
+    if (settings.homeMode == "asset") {
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Fx.Surface)
+                .clickable(enabled = enabled, onClick = onPick).padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Ativo", color = Fx.Muted, fontSize = 11.sp)
+                Text(settings.focusSymbol, color = Fx.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(com.fxengine.app.data.Catalog.name(settings.focusSymbol), color = Fx.Muted, fontSize = 12.sp)
+            }
+            Text("Trocar ▾", color = Fx.Blue, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
 fun assetsLabel(a: String) = when (a) {
     "fx" -> "os 28 pares de Forex"
     "metais" -> "os 4 metais"
-    else -> "Forex e metais (32 ativos)"
+    "all" -> "Forex e metais (32 ativos)"
+    else -> com.fxengine.app.data.Catalog.parseList(a).let { l ->
+        if (l.size <= 3) l.joinToString(", ") else "${l.size} ativos escolhidos"
+    }
 }
 
 @Composable
@@ -161,7 +232,7 @@ private fun Header(state: UiState) {
 }
 
 @Composable
-private fun AnalyzeButton(running: Boolean, progress: Int, onClick: () -> Unit) {
+private fun AnalyzeButton(running: Boolean, progress: Int, label: String = "ANALISAR", onClick: () -> Unit) {
     val static = LocalStaticUi.current
     val glow = if (static) 1f else {
         val pulse = rememberInfiniteTransition(label = "pulse")
@@ -204,7 +275,8 @@ private fun AnalyzeButton(running: Boolean, progress: Int, onClick: () -> Unit) 
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(56.dp))
-                    Text("ANALISAR", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(label, color = Color.White, fontSize = if (label.length > 8) 20.sp else 22.sp,
+                        fontWeight = FontWeight.Bold)
                 }
             }
         }

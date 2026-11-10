@@ -107,7 +107,7 @@ private inline fun <T> JSONArray?.objects(f: (JSONObject) -> T): List<T> =
 
 private fun JSONObject.named(): Named = Named(s("name"), d("value"), s("note"))
 
-private fun parseOpp(o: JSONObject): Opportunity {
+internal fun parseOpp(o: JSONObject): Opportunity {
     val e = o.optJSONObject("edge")
     return Opportunity(
         symbol = o.s("symbol"), name = o.s("name"), isMetal = o.optBoolean("is_metal"),

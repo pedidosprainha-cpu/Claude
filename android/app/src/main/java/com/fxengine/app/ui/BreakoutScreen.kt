@@ -87,7 +87,7 @@ fun statusColor(b: BreakoutItem): Color = when (b.status) {
 
 /** Wires the screen to the process-wide monitor and the foreground service. */
 @Composable
-fun BreakoutScreen(settings: AppSettings, onSettings: (AppSettings) -> Unit) {
+fun BreakoutScreen(settings: AppSettings, onSettings: (AppSettings) -> Unit, onOpenAsset: (String) -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val mon by BreakoutMonitor.state.collectAsStateWithLifecycle()
@@ -110,6 +110,7 @@ fun BreakoutScreen(settings: AppSettings, onSettings: (AppSettings) -> Unit) {
             }
         },
         onSettings = onSettings,
+        onOpenAsset = onOpenAsset,
     )
 }
 
@@ -121,6 +122,7 @@ fun BreakoutContent(
     onScanNow: () -> Unit,
     onToggleMonitor: () -> Unit,
     onSettings: (AppSettings) -> Unit,
+    onOpenAsset: (String) -> Unit = {},
 ) {
     val haptic = LocalHapticFeedback.current
     var filter by remember { mutableStateOf(0) }       // 0 acionáveis · 1 todos · 2 falsos
@@ -180,6 +182,10 @@ fun BreakoutContent(
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { selected = null }, sheetState = sheet, containerColor = Fx.Bg) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                OutlinedButton(onClick = { selected = null; onOpenAsset(b.symbol) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Análise completa de ${b.symbol}")
+                }
+                Spacer(Modifier.height(10.dp))
                 BreakoutDetail(b)
                 Spacer(Modifier.height(32.dp))
             }

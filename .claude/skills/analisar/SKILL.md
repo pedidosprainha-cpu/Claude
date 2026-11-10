@@ -36,9 +36,19 @@ Exemplos: `-a metais`, `-a EURUSD,XAUUSD --detalhe`, `--saldo 25000 --risco 0.5`
    - Se o motor não recomendou entrada: diga por quê (gates) e mostre o melhor
      candidato e o que precisaria mudar.
 
-5. Se o usuário pedir rompimentos/breakouts, rode também
+5. Se o usuário citar **um único ativo** ("analise o EURUSD", "e o ouro?"), rode a análise
+   completa dele (≈5 s) em vez da varredura:
+
+   ```bash
+   python3 -m fxengine ativo -a EURUSD
+   ```
+
+   Apresente decisão, plano, leitura por timeframe, níveis-chave mais próximos, amplitude
+   do dia (ADR usada), fundamentos e agenda das duas moedas. Com `--json -` sai o JSON.
+
+6. Se o usuário pedir rompimentos/breakouts, rode também
    `python3 -m fxengine rompimentos --min-nota B` e apresente os acionáveis (✔): ativo,
    status, nível rompido, plano e pontos de atenção.
 
-6. Regras: use somente números da saída do motor (nunca invente preço); cite o horário
+7. Regras: use somente números da saída do motor (nunca invente preço); cite o horário
    da cotação; inclua o aviso de que é análise automatizada, não recomendação de investimento.

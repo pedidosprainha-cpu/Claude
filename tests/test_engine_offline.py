@@ -86,3 +86,35 @@ def test_app_api_reports_errors_as_json():
 
     d = json.loads(app_api.run("/tmp/fxengine-test-cache", assets="NOPE", offline=True))
     assert d["ok"] is False and "NOPE" in d["error"]
+
+
+def test_scan_asset_and_api_offline(tmp_path):
+    from fxengine import app_api
+
+    calls = []
+
+    class Listener:
+        def onProgress(self, pct, msg):  # noqa: N802
+            calls.append(pct)
+
+    for sym in ("EURJPY", "XAUUSD"):
+        d = json.loads(app_api.analyze_asset(str(tmp_path), sym, listener=Listener(), offline=True, use_edge=False))
+        assert d["ok"] is True and d["symbol"] == sym
+        assert d["decision"]["headline"] and len(d["mtf"]) == 5
+        assert d["levels"] and all(lv["side"] in ("resistência", "suporte") for lv in d["levels"])
+        assert len(d["chart"]["H1"]["c"]) == 120 and len(d["chart"]["H1"]["t"]) == 120
+        assert d["daily"]["adr_pips"] > 0 and set(d["daily"]["pivots"]) == {"R2", "R1", "P", "S1", "S2"}
+        assert "opportunity" in d and "breakouts" in d
+    assert calls[-1] == 100
+    bad = json.loads(app_api.analyze_asset(str(tmp_path), "NOPE", offline=True))
+    assert bad["ok"] is False
+
+
+def test_cli_asset_offline(capsys):
+    assert main(["ativo", "-a", "GBPUSD", "--offline", "--sem-edge"]) == 0
+    out = capsys.readouterr().out
+    assert "GBPUSD" in out and "Níveis" in out
+    assert main(["ativo", "-a", "XAUUSD", "--offline", "--sem-edge", "--json", "-"]) == 0
+    d = json.loads(capsys.readouterr().out)
+    assert d["ok"] and d["symbol"] == "XAUUSD" and d["is_metal"]
+    assert all(h["tone"] in (-1, 0, 1) for h in d["headlines"])

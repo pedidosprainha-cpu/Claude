@@ -69,6 +69,22 @@ class EngineRunner(context: Context) {
             settings.breakoutPlan,
         ).toString()
 
+    /** Deep analysis of one instrument (fxengine/app_api.py analyze_asset). */
+    fun analyzeAsset(settings: AppSettings, symbol: String, onProgress: (Int, String) -> Unit): String =
+        api().callAttr(
+            "analyze_asset",
+            cacheDir(),
+            symbol,
+            settings.balance,
+            settings.riskPct,
+            settings.breakoutPlan,
+            TZ,
+            LambdaProgressListener(onProgress),
+            false,
+            settings.useEdge,
+            settings.useNews,
+        ).toString()
+
     companion object {
         const val TZ = "America/Sao_Paulo"
     }

@@ -6,6 +6,9 @@ import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fxengine.app.data.AppSettings
+import com.fxengine.app.data.AssetOutput
+import com.fxengine.app.data.AssetResult
+import com.fxengine.app.data.parseAsset
 import com.fxengine.app.data.EngineOutput
 import com.fxengine.app.data.Prefs
 import com.fxengine.app.data.ScanResult
@@ -31,6 +34,8 @@ data class UiState(
     val engineReady: Boolean = false,
     val showDisclaimer: Boolean = false,
     val justFinished: Long = 0L,
+    val asset: AssetResult? = null,          // last single-instrument analysis
+    val assetAtMillis: Long = 0L,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -44,6 +49,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             (parseEngineOutput(raw) as? EngineOutput.Ok)?.let { ok ->
                 _state.update { it.copy(result = ok.result, resultAtMillis = lastResultTime()) }
             }
+        }
+        prefs.loadAsset()?.let { (raw, at) ->
+            (parseAsset(raw) as? AssetOutput.Ok)?.let { ok -> _state.update { it.copy(asset = ok.result, assetAtMillis = at) } }
         }
         viewModelScope.launch(Dispatchers.Default) {
             runCatching { runner.warmUp() }
@@ -70,7 +78,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
+    /** Analyze button: full scan or the selected instrument, depending on the mode. */
     fun analyze() {
+        if (_state.value.settings.homeMode == "asset") analyzeAsset(_state.value.settings.focusSymbol) else analyzeAll()
+    }
+
+    /** Switch to single-instrument mode for [symbol] and analyze it now (used by every "ver análise" button). */
+    fun openAsset(symbol: String) {
+        updateSettings(_state.value.settings.copy(homeMode = "asset", focusSymbol = symbol))
+        analyzeAsset(symbol)
+    }
+
+    fun analyzeAsset(symbol: String) {
+        if (_state.value.running) return
+        if (!online()) {
+            _state.update { it.copy(error = "Sem conexão com a internet", errorDetail = "Conecte-se e toque em Analisar de novo.") }
+            return
+        }
+        _state.update { it.copy(running = true, progress = 0, step = "Iniciando o motor", error = null, errorDetail = "") }
+        viewModelScope.launch {
+            val raw = withContext(Dispatchers.Default) {
+                runCatching {
+                    runner.analyzeAsset(_state.value.settings, symbol) { pct, msg ->
+                        _state.update { s -> s.copy(progress = maxOf(s.progress, pct), step = msg) }
+                    }
+                }.getOrElse { e -> """{"ok": false, "error": ${org.json.JSONObject.quote(e.message ?: e.toString())}}""" }
+            }
+            when (val out = parseAsset(raw)) {
+                is AssetOutput.Ok -> {
+                    prefs.saveAsset(out.raw)
+                    _state.update {
+                        it.copy(running = false, progress = 100, asset = out.result,
+                            assetAtMillis = System.currentTimeMillis(), justFinished = System.currentTimeMillis())
+                    }
+                }
+                is AssetOutput.Failed -> _state.update { it.copy(running = false, error = out.message, errorDetail = out.detail) }
+            }
+        }
+    }
+
+    private fun analyzeAll() {
         if (_state.value.running) return
         if (!online()) {
             _state.update { it.copy(error = "Sem conexão com a internet", errorDetail = "Conecte-se e toque em Analisar de novo.") }

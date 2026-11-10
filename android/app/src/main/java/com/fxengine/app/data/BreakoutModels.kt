@@ -116,7 +116,7 @@ private fun JSONObject.s(key: String): String = if (isNull(key)) "" else optStri
 private fun JSONArray?.strings(): List<String> =
     if (this == null) emptyList() else List(length()) { optString(it) }
 
-private fun parseItem(o: JSONObject): BreakoutItem {
+internal fun parseItem(o: JSONObject): BreakoutItem {
     val p = o.getJSONObject("plan")
     val h = o.optJSONObject("hist")
     return BreakoutItem(

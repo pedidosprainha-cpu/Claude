@@ -23,6 +23,17 @@ pip install -r requirements.txt
 python3 -m fxengine --offline               # demonstração com dados sintéticos (sem rede)
 ```
 
+Análise completa de um único ativo (qualquer um dos 28 pares ou 4 metais):
+
+```bash
+python3 -m fxengine ativo -a EURUSD         # decisão, timeframes, níveis, dia, quant, fundamentos
+python3 -m fxengine ativo -a XAUUSD --json - # mesma análise em JSON
+```
+
+Carrega o histórico completo só do ativo escolhido; os outros pares entram em versão leve
+(5 dias de M15 + 1 mês de H1), apenas para a força relativa das moedas — a análise de um
+ativo leva ≈5 s.
+
 Rompimentos (breakouts) em tempo real:
 
 ```bash
@@ -38,8 +49,10 @@ manchetes e agenda e devolve a decisão final em português.
 ### App Android
 
 O mesmo motor roda dentro de um app Android (Python embutido no APK, sem servidor):
-um botão **ANALISAR**, a decisão em destaque, ranking, painel de mercado e ajustes de
-saldo e risco. Instalação, uso e build em [`android/README.md`](android/README.md).
+um botão **ANALISAR** (todos os ativos ou um ativo escolhido, com gráfico de candles e
+o plano desenhado), a decisão em destaque, rompimentos em tempo real, ranking, painel de
+mercado e ajustes de saldo e risco. Instalação, uso e build em
+[`android/README.md`](android/README.md).
 
 ## O que sai
 
@@ -88,7 +101,16 @@ fxengine/
 - **confluência** (quantas das 4 camadas concordam);
 - **espaço** até a próxima zona de S/R oposta, em R;
 - **edge** histórico (expectativa posterior do setup);
-- **spread** relativo ao stop, **liquidez** da sessão, **agenda**, **volatilidade** extrema.
+- **spread** relativo ao stop, **liquidez** da sessão, **agenda**, **volatilidade** extrema;
+- **dia**: quanto da amplitude diária média (ADR, 20 dias) já foi usada. Se o preço já andou
+  mais de 1 ADR a favor hoje (×0.85, risco de exaustão) ou o dia já usou mais de 130% da
+  ADR (×0.92), o score cai;
+- **rompimento**: confluência com o detector de rompimentos no mesmo ativo — só alertas
+  acionáveis do perfil validado contam (×1.06 a favor, ×0.90 contra). As features são
+  calculadas na mesma janela curta usada no treino do modelo.
+
+Os multiplicadores **dia** e **rompimento** são regras de bom senso, não parâmetros
+otimizados no histórico; o filtro de edge histórico continua sendo a trava principal.
 
 Notas: A+ ≥ 65 · A ≥ 55 · B ≥ 45 · C ≥ 35 · D < 35. Só é recomendado o que tem nota ≥ B
 **e** passa nos filtros obrigatórios:

@@ -10,6 +10,8 @@ import math
 import os
 import time
 import traceback
+
+import numpy as np
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -333,6 +335,163 @@ def scan_breakouts(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 
                                "detail": "; ".join(f"{k}: {v}" for k, v in list(res.errors.items())[:6])},
                               ensure_ascii=False)
         return json.dumps(breakouts_result_dict(res, tz_name, time.time() - t0), ensure_ascii=False, default=str)
+    except Exception as e:  # noqa: BLE001
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
+                           "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------- single instrument
+
+def _bars(df, n: int, digits: int) -> dict:
+    sub = df.iloc[-n:]
+    return {"t": [int(t.timestamp() * 1000) for t in sub.index],
+            "o": [round(float(x), digits) for x in sub.o], "h": [round(float(x), digits) for x in sub.h],
+            "l": [round(float(x), digits) for x in sub.l], "c": [round(float(x), digits) for x in sub.c]}
+
+
+def asset_result_dict(r, tz_name: str = "America/Sao_Paulo", elapsed: float = 0.0) -> dict:
+    from .analysis import indicators as ta
+    from .analysis.fundamental import headline_sentiment
+
+    tz = ZoneInfo(tz_name)
+    inst, d, o = r.inst, r.data, r.opportunity
+    loc = r.now.astimezone(tz)
+    s = r.settings
+    ccys = {inst.base, inst.quote} if not inst.is_metal else {inst.base, "USD"}
+    f = d.frames
+    h1 = f["H1"]
+    atr_h1 = float(ta.atr(h1).iloc[-1])
+    out = {
+        "ok": True, "kind": "asset",
+        "timestamp": loc.strftime("%d/%m/%Y %H:%M"), "weekday": DIAS[loc.weekday()],
+        "symbol": inst.symbol, "name": inst.name or f"{inst.base}/{inst.quote}", "is_metal": inst.is_metal,
+        "digits": inst.digits, "pip": inst.pip,
+        "price": {"bid": inst.fmt(d.bid), "ask": inst.fmt(d.ask), "mid": inst.fmt(d.price),
+                  "spread_pips": _num(inst.pips(d.ask - d.bid), 1), "time": d.quote_ts.astimezone(tz).strftime("%H:%M:%S"),
+                  "source": d.quote_source},
+        "tradeable": d.tradeable, "session": r.session.label, "notes": d.notes,
+        "settings": {"balance": s.balance, "risk_pct": s.risk_pct, "plan": s.breakout_plan},
+        "elapsed_s": _num(elapsed, 1),
+    }
+    if o is None:
+        out["decision"] = {"execute": False, "headline": "Dados insuficientes", "reason": "histórico curto demais"}
+        return out
+    out["opportunity"] = opp_dict(o, tz, s.min_score)
+    out["decision"] = ({"execute": True, "headline": f"{o.side} {o.symbol} a mercado",
+                        "reason": f"Nota {o.grade} · {o.score:.0f}/100 · passou em todos os filtros"}
+                       if o.executable else
+                       {"execute": False, "headline": f"Não executar {o.symbol} agora",
+                        "reason": (o.gates[0] if o.gates else f"score {o.score:.0f} abaixo do mínimo {s.min_score:.0f}")
+                        + f" · melhor lado agora: {o.side.lower()}"})
+    # multi-timeframe table
+    mtf = []
+    for tf, v in o.tech.views.items():
+        stack = "alta" if v.ema8 > v.ema21 > v.ema50 else ("baixa" if v.ema8 < v.ema21 < v.ema50 else "mista")
+        mtf.append({"tf": tf, "trend": _num(v.trend), "momentum": _num(v.momentum), "score": _num(v.score),
+                    "rsi": _num(v.rsi, 0), "adx": _num(v.adx, 0), "emas": stack, "supertrend": v.st_dir,
+                    "ichimoku": {1: "acima", -1: "abaixo", 0: "dentro"}[v.ichi],
+                    "structure": {1: "HH/HL", -1: "LH/LL", 0: "mista"}[v.structure.trend],
+                    "bos": v.structure.bos,
+                    "candles": [c.name for c in v.candles],
+                    "squeeze": None if v.squeeze is None else {"on": v.squeeze.on, "fired": v.squeeze.fired,
+                                                                 "pct": _num(v.squeeze.width_pct, 0)},
+                    "divergence": v.divergence_desc})
+    out["mtf"] = mtf
+    # key levels with distances
+    lv = []
+    for side, items in (("resistência", o.levels.above(d.price)[:4]), ("suporte", o.levels.below(d.price)[:4])):
+        for z in items:
+            lv.append({"side": side, "price": inst.fmt(z.price), "value": z.price, "strength": _num(z.strength, 1),
+                       "labels": z.label(), "dist_pips": _num(inst.pips(abs(z.price - d.price)), 1),
+                       "dist_atr": _num(abs(z.price - d.price) / atr_h1, 2)})
+    out["levels"] = lv
+    # daily context
+    d1, w1 = f["D1"], f["W1"]
+    adr = float(ta.atr(d1).iloc[-2]) if len(d1) > 15 else float((d1.h - d1.l).mean())
+    prev = d1.iloc[-2] if len(d1) >= 2 else d1.iloc[-1]
+    piv = (prev.h + prev.l + prev.c) / 3
+    today = d1.iloc[-1]
+    out["daily"] = {
+        "adr_pips": _num(inst.pips(adr), 1), "today_pips": _num(inst.pips(float(today.h - today.l)), 1),
+        "adr_used_pct": _num(o.day.get("adr_used", 0) * 100, 0), "move_today_adr": _num(o.day.get("move_today", 0)),
+        "day_open": inst.fmt(float(today.o)), "prev_high": inst.fmt(float(prev.h)), "prev_low": inst.fmt(float(prev.l)),
+        "prev_close": inst.fmt(float(prev.c)),
+        "week_high": inst.fmt(float(w1.iloc[-2].h)) if len(w1) >= 2 else "",
+        "week_low": inst.fmt(float(w1.iloc[-2].l)) if len(w1) >= 2 else "",
+        "pivots": {"R2": inst.fmt(piv + (prev.h - prev.l)), "R1": inst.fmt(2 * piv - prev.l), "P": inst.fmt(piv),
+                   "S1": inst.fmt(2 * piv - prev.h), "S2": inst.fmt(piv - (prev.h - prev.l))},
+    }
+    q = o.quant
+    out["quant"] = {"regime": q.regime, "hurst": _num(q.hurst), "vr": _num(q.vr), "vr_z": _num(q.vr_z, 1),
+                    "er": _num(q.er), "tsmom": _num(q.tsmom), "mr_z": _num(q.mr_z, 1),
+                    "vol_pct": _num(q.vol_pct, 0), "vol_ann": _num(q.vol_ann, 1)}
+    # currency strength and fundamentals
+    order = [c for c, _ in r.strength.ranking]
+    st = {}
+    for c in (inst.base, inst.quote):
+        if c in r.strength.scores:
+            st[c] = {"z": _num(r.strength.scores[c]), "rank": order.index(c) + 1}
+        elif c in r.strength.metal_z:
+            st[c] = {"z": _num(r.strength.metal_z[c]), "rank": None}
+    out["strength"] = st
+    fr = o.fund
+    out["fundamental"] = {
+        "score": _num(fr.score, 0),
+        "components": [{"name": k, "value": _num(v), "fact": fr.facts.get(k, "")} for k, v in fr.components.items()],
+        "rates": {c: {"rate": _num(p.rate), "chg6m": _num(p.change_6m)} for c, p in (r.ctx.rates or {}).items()
+                  if c in ccys},
+        "cot": {c: {"net_pct": _num(x.net_pct_oi, 0), "index": _num(x.index_3y, 0), "chg4w": _num(x.chg_4w_pct, 1)}
+                for c, x in (r.ctx.cot or {}).items() if c in ccys},
+        "macro": r.fmodel.macro.notes,
+    }
+    evs = []
+    for e in sorted(r.ctx.events or [], key=lambda x: x.time):
+        mins = (e.time - r.now).total_seconds() / 60
+        if e.ccy in ccys | {"ALL"} and e.impact in ("High", "Medium") and -120 <= mins <= 48 * 60:
+            t = e.time.astimezone(tz)
+            evs.append({"when": f"{DIAS[t.weekday()]} {t:%d/%m %H:%M}", "ccy": e.ccy, "title": e.title,
+                        "impact": e.impact, "in": (f"em {mins / 60:.1f}h" if mins >= 60 else f"em {mins:.0f} min")
+                        if mins >= 0 else f"há {-mins:.0f} min", "forecast": e.forecast, "previous": e.previous})
+    out["events"] = evs[:12]
+    heads = []
+    for h in r.ctx.headlines or []:
+        sent = headline_sentiment(h.title)
+        if sent and set(sent) & ccys:
+            # tone for the pair: good news for the base (or bad for the quote) points up
+            pair_tone = sent.get(inst.base, 0.0) - sent.get(inst.quote, 0.0)
+            heads.append({"when": h.time.astimezone(tz).strftime("%d/%m %H:%M"), "title": h.title,
+                          "tone": int(np.sign(pair_tone))})
+    out["headlines"] = heads[:8]
+    out["breakouts"] = [breakout_dict(b, tz, r.now) for b in o.breakouts]
+    # chart data and overlays
+    out["chart"] = {"H1": _bars(h1, 120, inst.digits), "M15": _bars(f["M15"], 96, inst.digits)}
+    p = o.plan
+    out["overlay"] = {
+        "levels": [z["value"] for z in lv],
+        "plan": {"entry": p.entry, "sl": p.sl, "tp1": p.tp1, "tp2": p.tp2, "direction": o.direction,
+                 "show": bool(o.executable)},
+    }
+    issues = [f"{k}: {v}" for k, v in {**r.ctx.status, **r.errors}.items() if v not in ("ok", "sintético")]
+    out["data_issues"] = issues[:6]
+    return out
+
+
+def analyze_asset(cache_dir: str, symbol: str, balance: float = 10_000.0, risk_pct: float = 1.0,
+                  plan: str = "mercado", tz_name: str = "America/Sao_Paulo", listener=None,
+                  offline: bool = False, use_edge: bool = True, use_news: bool = True) -> str:
+    """Deep analysis of one currency pair or metal. Returns JSON."""
+    def progress(pct: float, msg: str) -> None:
+        if listener is not None:
+            listener.onProgress(int(round(pct)), msg)
+
+    t0 = time.time()
+    try:
+        s = Settings(balance=float(balance), risk_pct=float(risk_pct), cache_dir=cache_dir, workers=6,
+                     offline=bool(offline), use_edge=bool(use_edge), use_news=bool(use_news),
+                     breakout_plan=plan if plan in bk.MODEL_PATHS else "mercado")
+        progress(1, "Iniciando o motor")
+        res = Engine(s).scan_asset(symbol, progress=progress)
+        return json.dumps(asset_result_dict(res, tz_name, time.time() - t0), ensure_ascii=False, default=str)
     except Exception as e:  # noqa: BLE001
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
                            "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)

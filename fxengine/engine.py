@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 from . import sessions
+from . import breakouts as bk_mod
 from .analysis import edge as edge_mod
 from .analysis import quant as quant_mod
 from .analysis import strength as strength_mod
@@ -18,7 +19,9 @@ from .analysis.structure import LevelMap, level_map
 from .analysis.technical import TechnicalResult
 from .config import Settings, grade
 from .data.provider import InstrumentData, MarketContext
+from .data.provider import LIGHT
 from .instruments import FX_PAIRS, Instrument, select
+from .instruments import get as get_instrument
 from .risk import TradePlan, build_plan
 
 
@@ -49,6 +52,8 @@ class Opportunity:
     warnings: list[str]
     data_notes: list[str]
     executable: bool = False      # passed every gate and the minimum score
+    day: dict = field(default_factory=dict)          # daily-range context (ADR used, move today, ...)
+    breakouts: list = field(default_factory=list)    # breakouts detected on this instrument now
 
     @property
     def symbol(self) -> str:
@@ -86,7 +91,9 @@ def _agree(v: float, d: int, thr: float = 10.0) -> int:
 
 
 def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResult, fmodel: FundamentalModel,
-                       sess: sessions.SessionState, s: Settings, prices: dict[str, float]) -> Opportunity | None:
+                       sess: sessions.SessionState, s: Settings, prices: dict[str, float],
+                       now: datetime | None = None, events: list | None = None,
+                       bk_model=None) -> Opportunity | None:
     inst, f, px = data.inst, data.frames, data.price
     tech = tech_mod.analyze(f, px, s.tf_weights)
     if "H1" not in tech.views or "M15" not in tech.views:
@@ -159,6 +166,40 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     if quant.vol_pct > 95:
         mult["volatilidade"] = (0.9, f"vol. realizada no percentil {quant.vol_pct:.0f}")
 
+    # daily-range context: how much of the average daily range is already used, and in which direction
+    now = now or data.quote_ts
+    day = bk_mod.context_features(f.get("H1"), px, d, now)
+    extra_r, extra_w = [], []
+    if day["move_today"] > 1.0:
+        mult["dia"] = (0.85, f"o dia já andou {day['move_today']:.1f}× a amplitude média a favor")
+        extra_w.append(f"o preço já andou {day['move_today']:.1f}× a amplitude diária média a favor hoje: "
+                       "risco de exaustão")
+    elif day["adr_used"] > 1.3:
+        mult["dia"] = (0.92, f"amplitude do dia em {day['adr_used'] * 100:.0f}% da média")
+        extra_w.append(f"o dia já usou {day['adr_used'] * 100:.0f}% da amplitude diária média")
+    elif day["adr_used"] < 0.5:
+        extra_r.append(f"dia ainda com amplitude disponível ({day['adr_used'] * 100:.0f}% da média usada)")
+
+    # confluence with the validated breakout model on the same instrument
+    bks = []
+    if bk_model is not None:
+        try:
+            bks = bk_mod.detect(bk_mod.light_view(data), now, s, prices, strength, events or [], sess,
+                                model=bk_model)
+        except Exception:  # noqa: BLE001 - confluence is optional
+            bks = []
+        same = [b for b in bks if b.actionable and b.direction == d]
+        against = [b for b in bks if b.actionable and b.direction == -d]
+        if same:
+            b0 = same[0]
+            mult["rompimento"] = (1.06, f"rompimento {b0.tf} nota {b0.grade} a favor")
+            extra_r.append(f"confluência: rompimento {b0.tf} {bk_mod.STATUS_LABEL[b0.status].lower()} nota "
+                           f"{b0.grade} na mesma direção ({b0.level.label})")
+        elif against:
+            b0 = against[0]
+            mult["rompimento"] = (0.9, f"rompimento {b0.tf} nota {b0.grade} contra")
+            extra_w.append(f"rompimento {b0.tf} nota {b0.grade} na direção oposta ({b0.level.label})")
+
     score = abs(composite)
     for v, _ in mult.values():
         score *= v
@@ -196,6 +237,8 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
         (reasons if np.sign(mz) == d else warnings).append(f"momentum normalizado {inst.base} vs USD {mz:+.2f}σ")
     reasons += quant.notes[:1]
     reasons += f_reasons[:4]
+    reasons += extra_r
+    warnings += extra_w
     if ed is not None and ed.reliable and ed.exp_post_r > 0:
         reasons.append(f"edge histórico do setup: {ed.n} sinais semelhantes em 1 ano, TP1 antes do SL em "
                        f"{ed.win_rate * 100:.0f}% (posterior {ed.p_post * 100:.0f}%), expectativa {ed.exp_post_r:+.2f}R")
@@ -209,6 +252,7 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
                       st_score, comps, float(composite), mult, score, grade(score), plan, ed, levels,
                       gates, reasons, warnings, data.notes)
     opp.executable = not gates and score >= s.min_score
+    opp.day, opp.breakouts = day, bks
     return opp
 
 
@@ -265,6 +309,7 @@ class Engine:
         fmodel = FundamentalModel(ctx)
         sess = sessions.state(now)
         prices = {s: d.price for s, d in data.items()}
+        bk_model = bk_mod.load_model(bk_mod.MODEL_PATHS.get(self.s.breakout_plan, bk_mod.MODEL_PATH))
 
         opps = []
         for k, inst in enumerate(targets):
@@ -272,7 +317,8 @@ class Engine:
                 continue
             step(66 + 32 * k / max(len(targets), 1), f"Analisando {inst.symbol}")
             try:
-                o = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices)
+                o = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
+                                       now=now, events=ctx.events, bk_model=bk_model)
             except Exception as e:  # noqa: BLE001 - isolate per-instrument failures
                 errors[inst.symbol] = f"erro na análise: {e}"
                 continue
@@ -283,3 +329,52 @@ class Engine:
         corr = _correlations(best or opps[0], opps, data) if opps else {}
         step(100, "Concluído")
         return ScanResult(now, sess, opps, best, strength, fmodel.macro, ctx, errors, self.s, corr)
+
+    # ------------------------------------------------------------------ single instrument
+    def scan_asset(self, symbol: str, progress=None) -> "AssetResult":
+        """Deep analysis of one instrument. The other FX pairs are loaded with the light
+        profile (only what the currency-strength meter needs), so it is much faster than a scan."""
+        def step(pct: float, msg: str) -> None:
+            if progress:
+                progress(min(max(pct, 0.0), 100.0), msg)
+
+        inst = get_instrument(symbol)
+        now = self.now()
+        step(3, f"Preços ao vivo e gráficos de {inst.symbol}")
+        data, errors = self.provider.load_instruments([inst], now)
+        if inst.symbol not in data:
+            raise RuntimeError(f"sem dados para {inst.symbol}: {errors.get(inst.symbol, 'falha de rede')}")
+        others = [i for i in FX_PAIRS if i.symbol != inst.symbol]
+        rest, err2 = self.provider.load_instruments(
+            others, now, spec=LIGHT,
+            progress=lambda k, n: step(15 + 50 * k / n, f"Força relativa: pares {k}/{n}"))
+        errors.update(err2)
+        rest.update(data)
+        step(68, "Juros, COT, agenda e manchetes")
+        ctx = self.provider.load_context(now)
+        step(80, f"Analisando {inst.symbol}")
+        fx_h1 = {k: v.frames["H1"] for k, v in rest.items() if not v.inst.is_metal}
+        met_h1 = {inst.base: data[inst.symbol].frames["H1"]} if inst.is_metal else {}
+        strength = strength_mod.compute(fx_h1, met_h1)
+        fmodel = FundamentalModel(ctx)
+        sess = sessions.state(now)
+        prices = {k: v.price for k, v in rest.items()}
+        bk_model = bk_mod.load_model(bk_mod.MODEL_PATHS.get(self.s.breakout_plan, bk_mod.MODEL_PATH))
+        opp = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
+                                 now=now, events=ctx.events, bk_model=bk_model)
+        step(100, "Concluído")
+        return AssetResult(now, sess, inst, data[inst.symbol], opp, strength, fmodel, ctx, errors, self.s)
+
+
+@dataclass
+class AssetResult:
+    now: datetime
+    session: sessions.SessionState
+    inst: Instrument
+    data: InstrumentData
+    opportunity: Opportunity | None
+    strength: strength_mod.StrengthResult
+    fmodel: FundamentalModel
+    ctx: MarketContext
+    errors: dict[str, str]
+    settings: Settings

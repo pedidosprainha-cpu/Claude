@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="fxengine",
         description="Motor de análise gráfica, quantitativa e fundamentalista de Forex e metais "
                     "— encontra a melhor entrada a mercado agora.")
-    p.add_argument("cmd", nargs="?", default="scan", choices=["scan", "analisar", "analyze", "rompimentos"],
+    p.add_argument("cmd", nargs="?", default="scan", choices=["scan", "analisar", "analyze", "rompimentos", "ativo"],
                    help="scan/analisar = varrer o universo (padrão); analyze = detalhar ativos (use --ativos); "
                         "rompimentos = detector de rompimentos em tempo real")
     p.add_argument("--monitorar", type=int, metavar="SEG", default=0,
@@ -52,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         s.min_score = a.min_score
     if a.cmd == "rompimentos":
         return run_breakouts(s, a)
+    if a.cmd == "ativo":
+        return run_asset(s, a)
     t0 = time.time()
     res = Engine(s).scan(a.ativos)
     if not res.opportunities:
@@ -145,6 +147,64 @@ def run_breakouts(s: Settings, a) -> int:
             return 0
         first = False
         time.sleep(max(a.monitorar, 30))
+
+
+
+def run_asset(s: Settings, a) -> int:
+    """Deep analysis of one instrument: python -m fxengine ativo -a EURUSD"""
+    import json as _json
+
+    from . import app_api
+
+    sym = (a.ativos or "").split(",")[0].strip()
+    if not sym:
+        print("informe o ativo: python -m fxengine ativo -a EURUSD", file=sys.stderr)
+        return 2
+    s.breakout_plan = a.plano
+    raw = app_api.analyze_asset(s.cache_dir, sym, s.balance, s.risk_pct, a.plano, a.tz, offline=s.offline,
+                                use_edge=s.use_edge, use_news=s.use_news)
+    d = _json.loads(raw)
+    if not d.get("ok"):
+        print("erro:", d.get("error"), file=sys.stderr)
+        return 2
+    if a.json:
+        if a.json == "-":
+            print(raw)
+        else:
+            with open(a.json, "w", encoding="utf-8") as fh:
+                fh.write(raw)
+        if a.json == "-":
+            return 0
+    P = d["price"]
+    L = [f"{d['symbol']} · {d['name']} · {d['weekday']} {d['timestamp']} · {d['session']}",
+         f"bid {P['bid']} / ask {P['ask']} (spread {P['spread_pips']} pips, {P['source']} {P['time']})",
+         "", f">>> {d['decision']['headline']} — {d['decision']['reason']}"]
+    o = d.get("opportunity")
+    if o:
+        L += [f"    lado {o['side']} · nota {o['grade']} ({o['score']}) · entrada {o['entry']} · stop {o['sl']} · "
+              f"alvo1 {o['tp1']} · alvo2 {o['tp2']} · lote {o['lots']}",
+              "    por que: " + " | ".join(o["reasons"][:5]),
+              "    atenção: " + " | ".join(o["warnings"][:4])]
+    L += ["", "TF    tend  mom   score RSI ADX  EMAs   ST Ichimoku estrutura"]
+    for m in d["mtf"]:
+        L.append(f"{m['tf']:<4} {m['trend']:+5.2f} {m['momentum']:+5.2f} {m['score']:+5.2f} {m['rsi']:3.0f} "
+                 f"{m['adx']:3.0f}  {m['emas']:<6} {'+' if m['supertrend'] > 0 else '-'}  {m['ichimoku']:<8} {m['structure']}")
+    L += ["", "Níveis: " + " · ".join(f"{x['side'][0].upper()} {x['price']} ({x['dist_pips']}p)" for x in d["levels"])]
+    dl = d["daily"]
+    L += [f"Diário: ADR {dl['adr_pips']} pips · hoje {dl['today_pips']} ({dl['adr_used_pct']}% usado) · "
+          f"ontem {dl['prev_low']}–{dl['prev_high']} · pivôs " + " ".join(f"{k} {v}" for k, v in dl["pivots"].items())]
+    q = d["quant"]
+    L += [f"Quant: regime {q['regime']} · Hurst {q['hurst']} · VR {q['vr']} · vol. percentil {q['vol_pct']}",
+          "Força: " + " · ".join(f"{c} {v['z']:+.2f}" + (f" ({v['rank']}º)" if v['rank'] else "")
+                                 for c, v in d["strength"].items()),
+          f"Fundamental {d['fundamental']['score']:+.0f}: " + " · ".join(f"{c['name']} {c['value']:+.2f}"
+                                                                         for c in d["fundamental"]["components"])]
+    if d["events"]:
+        L += ["Agenda: " + " · ".join(f"{e['ccy']} {e['title']} ({e['in']})" for e in d["events"][:5])]
+    for b in d["breakouts"]:
+        L += [f"Rompimento {b['tf']} {b['status_label']} {b['side']} nota {b['grade']}: {b['plan']['entry_text']}"]
+    print("\n".join(L))
+    return 0
 
 
 if __name__ == "__main__":

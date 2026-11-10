@@ -12,6 +12,8 @@ data class AppSettings(
     val monitorIntervalSec: Int = 120,   // breakout monitor cycle
     val alertMinGrade: String = "A",     // notify only breakouts with this grade or better
     val breakoutPlan: String = "mercado", // mercado (real-time market entry) | limite (limit on retest)
+    val homeMode: String = "all",         // all = scan every instrument | asset = one instrument
+    val focusSymbol: String = "EURUSD",   // instrument for the single-asset analysis
 )
 
 class Prefs(context: Context) {
@@ -27,6 +29,8 @@ class Prefs(context: Context) {
         monitorIntervalSec = sp.getInt("monitor_interval", 120),
         alertMinGrade = sp.getString("alert_min_grade", "A") ?: "A",
         breakoutPlan = sp.getString("breakout_plan", "mercado") ?: "mercado",
+        homeMode = sp.getString("home_mode", "all") ?: "all",
+        focusSymbol = sp.getString("focus_symbol", "EURUSD") ?: "EURUSD",
     )
 
     fun save(s: AppSettings) {
@@ -39,6 +43,8 @@ class Prefs(context: Context) {
             .putInt("monitor_interval", s.monitorIntervalSec)
             .putString("alert_min_grade", s.alertMinGrade)
             .putString("breakout_plan", s.breakoutPlan)
+            .putString("home_mode", s.homeMode)
+            .putString("focus_symbol", s.focusSymbol)
             .apply()
     }
 
@@ -49,6 +55,14 @@ class Prefs(context: Context) {
     fun saveLast(raw: String) = runCatching { lastFile.writeText(raw) }
 
     fun loadLast(): String? = runCatching { if (lastFile.exists()) lastFile.readText() else null }.getOrNull()
+
+    private val lastAsset = File(context.filesDir, "ultimo_ativo.json")
+
+    fun saveAsset(raw: String) = runCatching { lastAsset.writeText(raw) }
+
+    fun loadAsset(): Pair<String, Long>? = runCatching {
+        if (lastAsset.exists()) lastAsset.readText() to lastAsset.lastModified() else null
+    }.getOrNull()
 
     private val lastBreakouts = File(context.filesDir, "ultimos_rompimentos.json")
 

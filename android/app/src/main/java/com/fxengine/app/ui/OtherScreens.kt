@@ -66,7 +66,7 @@ fun ScreenTitle(title: String, subtitle: String = "") {
 // ------------------------------------------------------------------ ranking
 
 @Composable
-fun RankingScreen(result: ScanResult?) {
+fun RankingScreen(result: ScanResult?, onOpenAsset: (String) -> Unit = {}) {
     if (result == null) return EmptyHint("Faça uma análise para ver o ranking.")
     var onlyExec by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Opportunity?>(null) }
@@ -98,6 +98,10 @@ fun RankingScreen(result: ScanResult?) {
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { selected = null }, sheetState = sheet, containerColor = Fx.Bg) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { selected = null; onOpenAsset(o.symbol) }, modifier = Modifier.fillMaxWidth(),
+                ) { Text("Análise completa de ${o.symbol} (gráfico, níveis, timeframes)") }
+                Spacer(Modifier.height(10.dp))
                 OpportunityDetail(o, referenceOnly = !o.executable)
                 Spacer(Modifier.height(32.dp))
             }
@@ -250,17 +254,34 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit) {
             Text("Recomendado: entre 0,5% e 1%.", color = Fx.Muted, fontSize = 12.sp)
         }
 
+        var pickList by remember { mutableStateOf(false) }
         SectionCard("Ativos analisados") {
-            val opts = listOf("all" to "Todos", "fx" to "Forex", "metais" to "Metais")
+            val custom = settings.assets !in setOf("all", "fx", "metais")
+            val opts = listOf("all" to "Todos", "fx" to "Forex", "metais" to "Metais", "custom" to "Escolher")
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 opts.forEachIndexed { i, (key, label) ->
                     SegmentedButton(
-                        selected = settings.assets == key,
-                        onClick = { onChange(settings.copy(assets = key)) },
+                        selected = if (key == "custom") custom else settings.assets == key,
+                        onClick = { if (key == "custom") pickList = true else onChange(settings.copy(assets = key)) },
                         shape = SegmentedButtonDefaults.itemShape(i, opts.size),
-                    ) { Text(label) }
+                    ) { Text(label, fontSize = 13.sp) }
                 }
             }
+            Text(
+                "Vale para a varredura completa e para o monitor de rompimentos: " + assetsLabel(settings.assets) + ".",
+                color = Fx.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        if (pickList) {
+            AssetPickerSheet(
+                title = "Escolha os ativos", multi = true,
+                selected = com.fxengine.app.data.Catalog.parseList(settings.assets).toSet(),
+                onDismiss = { pickList = false },
+                onConfirm = { list ->
+                    pickList = false
+                    if (list.isNotEmpty()) onChange(settings.copy(assets = list.joinToString(",")))
+                },
+            )
         }
 
         SectionCard("Precisão x velocidade") {

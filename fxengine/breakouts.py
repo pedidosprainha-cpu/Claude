@@ -292,6 +292,23 @@ def classify(level: Level, closed: pd.DataFrame, forming, price: float, a: float
 
 # ---------------------------------------------------------------------------- detection
 
+LIGHT_M15_BARS, LIGHT_H1_BARS = 480, 528     # what the model was trained on (live monitor profile)
+
+
+def light_view(data: InstrumentData) -> InstrumentData:
+    """Same instrument, frames trimmed to the monitor's light profile (5 days of M15, ~1 month
+    of H1), so model features have the distribution the model was trained on."""
+    from .data.provider import build_frames
+    m15, h1 = data.frames.get("M15"), data.frames.get("H1")
+    if m15 is None or h1 is None:
+        return data
+    if len(m15) <= LIGHT_M15_BARS and len(h1) <= LIGHT_H1_BARS:
+        return data
+    frames = build_frames(None, m15.iloc[-LIGHT_M15_BARS:], h1.iloc[-LIGHT_H1_BARS:])
+    return InstrumentData(data.inst, frames, data.price, data.bid, data.ask, data.quote_ts,
+                          data.quote_source, data.tradeable, list(data.notes))
+
+
 def detect(data: InstrumentData, now: datetime, s: Settings, prices: dict[str, float],
            strength, events: list, sess, cache: dict | None = None,
            model: "BreakoutModel | None" = None) -> list[Breakout]:

@@ -11,9 +11,14 @@ import com.fxengine.app.data.BreakoutOutput
 import com.fxengine.app.data.BreakoutResult
 import com.fxengine.app.data.parseBreakouts
 import com.fxengine.app.monitor.MonitorState
+import com.fxengine.app.data.AssetOutput
+import com.fxengine.app.data.parseAsset
+import com.fxengine.app.ui.AssetDetail
+import com.fxengine.app.ui.AssetPickerContent
 import com.fxengine.app.ui.BottomBar
 import com.fxengine.app.ui.BreakoutContent
 import com.fxengine.app.ui.BreakoutDetail
+import com.fxengine.app.ui.CandleChart
 import com.fxengine.app.data.EngineOutput
 import com.fxengine.app.data.ScanResult
 import com.fxengine.app.data.parseEngineOutput
@@ -96,6 +101,46 @@ class ScreensTest {
     @Test
     fun breakout_detail() = shot("breakout_detail") {
         Frame { BreakoutDetail(breakouts().items.first()) }
+    }
+
+    private fun asset() = (parseAsset(javaClass.getResource("/sample_asset.json")!!.readText()) as AssetOutput.Ok).result
+
+    @Test
+    fun parsesAssetFixture() {
+        val a = asset()
+        assertEquals("EURUSD", a.symbol)
+        assertTrue(a.mtf.size == 5 && a.levels.isNotEmpty() && (a.chartH1?.size ?: 0) > 50)
+    }
+
+    @Test
+    fun asset_detail() = shot("asset_detail") { Frame { AssetDetail(asset()) } }
+
+    /** Full-length render of the asset analysis (MTF, levels, quant, fundamentals, agenda). */
+    @Test
+    @Config(qualifiers = "w400dp-h5600dp-xxhdpi")
+    fun asset_detail_full() = shot("asset_detail_full") { Frame { AssetDetail(asset()) } }
+
+    /** Chart with the trade plan drawn (entry, stop, targets) on top of candles and levels. */
+    @Test
+    fun candle_chart_plan() = shot("candle_chart_plan") {
+        val r = asset()
+        Frame {
+            CandleChart(r.chartM15!!, r.digits, r.overlayLevels,
+                r.plan?.copy(show = true), intraday = true)
+        }
+    }
+
+    @Test
+    fun home_asset_mode() = shot("home_asset_mode") {
+        Frame {
+            HomeScreen(UiState(engineReady = true, settings = AppSettings(homeMode = "asset", focusSymbol = "EURUSD"),
+                asset = asset(), assetAtMillis = System.currentTimeMillis()), {}, {})
+        }
+    }
+
+    @Test
+    fun asset_picker() = shot("asset_picker") {
+        Frame { AssetPickerContent("Escolha o ativo", setOf("EURUSD"), multi = false, onDismiss = {}, onConfirm = {}) }
     }
 
     @Test

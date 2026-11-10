@@ -53,15 +53,21 @@ fun FxApp(vm: MainViewModel, openTab: Int? = null, onTabOpened: () -> Unit = {})
         }
     }
 
+    val openAsset: (String) -> Unit = { sym ->
+        tab = 0
+        vm.openAsset(sym)
+    }
+
     Scaffold(
         containerColor = Fx.Bg,
         bottomBar = { BottomBar(tab) { tab = it } },
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when (tab) {
-                0 -> HomeScreen(state, onAnalyze = vm::analyze, onDismissError = vm::dismissError)
-                TAB_BREAKOUTS -> BreakoutScreen(state.settings, vm::updateSettings)
-                2 -> RankingScreen(state.result)
+                0 -> HomeScreen(state, onAnalyze = vm::analyze, onDismissError = vm::dismissError,
+                    onSettings = vm::updateSettings)
+                TAB_BREAKOUTS -> BreakoutScreen(state.settings, vm::updateSettings, onOpenAsset = openAsset)
+                2 -> RankingScreen(state.result, onOpenAsset = openAsset)
                 3 -> MarketScreen(state.result)
                 else -> SettingsScreen(state.settings, vm::updateSettings)
             }
