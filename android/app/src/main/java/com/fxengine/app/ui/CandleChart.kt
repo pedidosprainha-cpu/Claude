@@ -91,9 +91,11 @@ fun CandleChart(
         }
         // plan
         plan?.takeIf { it.show }?.let { p ->
+            val trail = p.exitKind == "trail"
             val lines = listOf(
                 Triple(p.entry, Fx.Blue, "entrada"), Triple(p.sl, Fx.Sell, "stop"),
-                Triple(p.tp1, Fx.Buy, "alvo 1"), Triple(p.tp2, Fx.Buy.copy(alpha = 0.7f), "alvo 2"),
+                Triple(p.tp1, Fx.Buy, if (trail) "+1R: stop móvel" else "alvo 1"),
+                Triple(p.tp2, Fx.Buy.copy(alpha = 0.7f), if (trail) "ref. 3R" else "alvo 2"),
             ).filter { it.first in lo..hi }.sortedBy { y(it.first) }
             // labels go above their line unless that would overlap the label placed just before
             var lastBottom = Float.NEGATIVE_INFINITY

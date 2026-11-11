@@ -30,11 +30,24 @@ data class ScanResult(
     val headlines: List<Pair<String, String>>,
     val dataIssues: List<String>,
     val elapsedS: Double,
+    val signalModel: SignalModelInfo? = null,
 )
 
 data class Decision(val execute: Boolean, val headline: String, val reason: String)
 
-data class Edge(val p: Double, val raw: Double, val n: Int, val expR: Double, val pf: Double?, val avgH: Double)
+data class Edge(
+    val p: Double, val raw: Double, val n: Int, val expR: Double, val pf: Double?, val avgH: Double,
+    val fromModel: Boolean = false, val passes: Boolean = false, val otherExpR: Double? = null,
+)
+
+/** Validation of the main-signal model (fxengine/data/signal_model.json), shown as a card. */
+data class SignalModelInfo(
+    val validated: Boolean, val period: String, val instruments: Int, val bars: Int, val testPeriod: String,
+    val filterPct: Int, val geometry: String, val wfMeanR: Double, val wfWorstR: Double, val wfPosShare: Double,
+    val testN: Int, val testMeanR: Double, val testWin: Double, val baselineTestMeanR: Double,
+    val pMean: Double, val winReal: Double,
+    val oldTestMeanR: Double? = null, val oldTestWin: Double? = null,
+)
 
 data class Named(val name: String, val value: Double, val note: String = "")
 
@@ -71,6 +84,9 @@ data class Opportunity(
     val tp2Basis: String,
     val invalidation: String,
     val edge: Edge?,
+    val exitKind: String = "partial",
+    val exitRule: String = "",
+    val horizonH: Int = 0,
     val components: List<Named>,
     val multipliers: List<Named>,
     val regime: String,
@@ -123,8 +139,13 @@ internal fun parseOpp(o: JSONObject): Opportunity {
         invalidation = o.s("invalidation"),
         edge = e?.let {
             Edge(it.d("p"), it.d("raw"), it.optInt("n"), it.d("exp_r"),
-                if (it.isNull("pf")) null else it.d("pf"), it.d("avg_h"))
+                if (it.isNull("pf")) null else it.d("pf"), it.d("avg_h"),
+                fromModel = it.s("source") == "modelo", passes = it.optBoolean("passes"),
+                otherExpR = if (it.isNull("other_exp_r") || !it.has("other_exp_r")) null else it.d("other_exp_r"))
         },
+        exitKind = o.s("exit_kind").ifBlank { "partial" },
+        exitRule = o.s("exit_rule"),
+        horizonH = o.optInt("horizon_h", 0),
         components = o.optJSONArray("components").objects { it.named() },
         multipliers = o.optJSONArray("multipliers").objects { it.named() },
         regime = o.s("regime"),
@@ -167,6 +188,7 @@ fun parseEngineOutput(raw: String): EngineOutput {
                     headlines = j.optJSONArray("headlines").objects { it.s("when") to it.s("title") },
                     dataIssues = j.optJSONArray("data_issues").strings(),
                     elapsedS = j.d("elapsed_s"),
+                    signalModel = parseSignalModel(j.optJSONObject("signal_model")),
                 ),
                 raw,
             )
@@ -174,4 +196,18 @@ fun parseEngineOutput(raw: String): EngineOutput {
     } catch (e: Exception) {
         EngineOutput.Failed("Resposta inválida do motor", e.toString())
     }
+}
+
+internal fun parseSignalModel(m: JSONObject?): SignalModelInfo? {
+    if (m == null || !m.optBoolean("available", false)) return null
+    return SignalModelInfo(
+        validated = m.optBoolean("validated"), period = m.s("period"), instruments = m.optInt("instruments"),
+        bars = m.optInt("bars"), testPeriod = m.s("test_period"), filterPct = m.optInt("filter_pct", 10),
+        geometry = m.s("geometry"), wfMeanR = m.d("wf_mean_r"), wfWorstR = m.d("wf_worst_r"),
+        wfPosShare = m.d("wf_pos_share"), testN = m.optInt("test_n"), testMeanR = m.d("test_mean_r"),
+        testWin = m.d("test_win"), baselineTestMeanR = m.d("baseline_test_mean_r"),
+        pMean = m.d("p_mean"), winReal = m.d("win_real"),
+        oldTestMeanR = if (m.isNull("old_test_mean_r") || !m.has("old_test_mean_r")) null else m.d("old_test_mean_r"),
+        oldTestWin = if (m.isNull("old_test_win") || !m.has("old_test_win")) null else m.d("old_test_win"),
+    )
 }

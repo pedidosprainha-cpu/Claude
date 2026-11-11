@@ -10,6 +10,7 @@ import numpy as np
 from . import sessions
 from . import breakouts as bk_mod
 from .analysis import edge as edge_mod
+from .analysis import signal_model as sig_mod
 from .analysis import quant as quant_mod
 from .analysis import strength as strength_mod
 from .analysis import technical as tech_mod
@@ -22,6 +23,7 @@ from .data.provider import InstrumentData, MarketContext
 from .data.provider import LIGHT
 from .instruments import FX_PAIRS, Instrument, select
 from .instruments import get as get_instrument
+from .instruments import typical_spread_pips
 from .risk import TradePlan, build_plan
 
 
@@ -54,6 +56,7 @@ class Opportunity:
     executable: bool = False      # passed every gate and the minimum score
     day: dict = field(default_factory=dict)          # daily-range context (ADR used, move today, ...)
     breakouts: list = field(default_factory=list)    # breakouts detected on this instrument now
+    signal: sig_mod.SignalEval | None = None         # calibrated historical model reading (if loaded)
 
     @property
     def symbol(self) -> str:
@@ -93,7 +96,8 @@ def _agree(v: float, d: int, thr: float = 10.0) -> int:
 def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResult, fmodel: FundamentalModel,
                        sess: sessions.SessionState, s: Settings, prices: dict[str, float],
                        now: datetime | None = None, events: list | None = None,
-                       bk_model=None) -> Opportunity | None:
+                       bk_model=None, sig_model: sig_mod.SignalModel | None = None,
+                       strength_closed: strength_mod.StrengthResult | None = None) -> Opportunity | None:
     inst, f, px = data.inst, data.frames, data.price
     tech = tech_mod.analyze(f, px, s.tf_weights)
     if "H1" not in tech.views or "M15" not in tech.views:
@@ -113,11 +117,21 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     v15, v1 = tech.views["M15"], tech.views["H1"]
     atr_d1 = tech.views["D1"].atr if "D1" in tech.views else 4 * v1.atr
     levels = level_map(f, px, inst.round_step, v1.atr)
+    now = now or data.quote_ts
+    model = sig_model if s.use_edge else None
     plan = build_plan(inst, d, data.bid, data.ask, f, v15.atr, v1.atr, atr_d1, levels,
-                      s.balance, s.risk_pct, prices, s.account_ccy)
+                      s.balance, s.risk_pct, prices, s.account_ccy,
+                      geometry=model.geometry if model is not None else None)
 
-    ed = None
-    if s.use_edge:
+    ed, sig = None, None
+    if model is not None:
+        try:
+            st_model = (strength_closed or strength).pair_score(inst.base, inst.quote)   # as in the replay
+            sig = sig_mod.evaluate(model, sig_mod.closed_bars(f["H1"], now), st_model,
+                                   typical_spread_pips(inst.symbol) * inst.pip, inst.is_metal, d)
+        except Exception:  # noqa: BLE001 - the model is an extra layer; never break the scan
+            sig = None
+    elif s.use_edge:
         ed = edge_mod.evaluate(f["H1"], d, plan.sl_atr_h1, plan.tp1_atr_h1, data.ask - data.bid,
                                s.edge_max_hold_bars, s.edge_prior_strength)
 
@@ -148,6 +162,11 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     else:
         mult["espaço"] = (1.0, f"zona oposta a {plan.room_r:.1f}R")
 
+    if sig is not None:
+        _, ev_cut = model.calibrated(model.ev_exec, 0.0)
+        mult["histórico"] = (float(np.clip(1 + 1.5 * (sig.ev_r - ev_cut), 0.75, 1.15)),
+                             f"modelo histórico: lucro em {sig.p * 100:.0f}% dos casos parecidos, "
+                             f"expectativa {sig.ev_r:+.2f}R")
     if ed is not None and ed.reliable:
         mult["edge"] = (float(np.clip(1 + 0.6 * ed.exp_post_r, 0.75, 1.15)),
                         f"histórico n={ed.n}, acerto {ed.p_post * 100:.0f}%, E={ed.exp_post_r:+.2f}R")
@@ -167,7 +186,6 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
         mult["volatilidade"] = (0.9, f"vol. realizada no percentil {quant.vol_pct:.0f}")
 
     # daily-range context: how much of the average daily range is already used, and in which direction
-    now = now or data.quote_ts
     day = bk_mod.context_features(f.get("H1"), px, d, now)
     extra_r, extra_w = [], []
     if day["move_today"] > 1.0:
@@ -221,6 +239,10 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
         gates.append(f"R:R TP1 {plan.rr1:.2f} < {s.min_rr_tp1}")
     if ed is not None and ed.reliable and ed.exp_post_r < -0.15:
         gates.append(f"edge histórico negativo ({ed.exp_post_r:+.2f}R)")
+    if sig is not None and not sig.passes:
+        q = float(model.info.get("filter_q", 0.1))
+        gates.append(f"histórico desfavorável: expectativa {sig.ev_r:+.2f}R, fora dos "
+                     f"{q * 100:.0f}% melhores sinais")
 
     # ------------------------------------------------------------------ narrative
     f_reasons, f_warns = fund.narrative(inst.symbol, d)
@@ -239,6 +261,13 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     reasons += f_reasons[:4]
     reasons += extra_r
     warnings += extra_w
+    if sig is not None:
+        if sig.passes:
+            reasons.append(f"modelo histórico (2+ anos, 32 ativos): sinal entre os melhores — lucro em "
+                           f"{sig.p * 100:.0f}% dos casos parecidos, expectativa {sig.ev_r:+.2f}R")
+        if sig.other_ev_r > sig.ev_r + 0.05:
+            warnings.append(f"o histórico favorece o lado oposto agora (expectativa {sig.other_ev_r:+.2f}R "
+                            f"contra {sig.ev_r:+.2f}R)")
     if ed is not None and ed.reliable and ed.exp_post_r > 0:
         reasons.append(f"edge histórico do setup: {ed.n} sinais semelhantes em 1 ano, TP1 antes do SL em "
                        f"{ed.win_rate * 100:.0f}% (posterior {ed.p_post * 100:.0f}%), expectativa {ed.exp_post_r:+.2f}R")
@@ -252,8 +281,14 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
                       st_score, comps, float(composite), mult, score, grade(score), plan, ed, levels,
                       gates, reasons, warnings, data.notes)
     opp.executable = not gates and score >= s.min_score
-    opp.day, opp.breakouts = day, bks
+    opp.day, opp.breakouts, opp.signal = day, bks, sig
     return opp
+
+
+def _closed_strength(fx_h1: dict, met_h1: dict, now) -> strength_mod.StrengthResult:
+    """Strength meter on closed H1 bars only: the input the signal model saw in the replay."""
+    return strength_mod.compute({k: sig_mod.closed_bars(v, now) for k, v in fx_h1.items()},
+                                {k: sig_mod.closed_bars(v, now) for k, v in met_h1.items()})
 
 
 def _correlations(best: Opportunity, opps: list[Opportunity], data: dict[str, InstrumentData]) -> dict[str, float]:
@@ -306,10 +341,12 @@ class Engine:
         fx_h1 = {s: d.frames["H1"] for s, d in data.items() if not d.inst.is_metal}
         met_h1 = {d.inst.base: d.frames["H1"] for s, d in data.items() if d.inst.is_metal}
         strength = strength_mod.compute(fx_h1, met_h1)
+        st_closed = _closed_strength(fx_h1, met_h1, now) if self.s.use_edge else None
         fmodel = FundamentalModel(ctx)
         sess = sessions.state(now)
         prices = {s: d.price for s, d in data.items()}
         bk_model = bk_mod.load_model(bk_mod.MODEL_PATHS.get(self.s.breakout_plan, bk_mod.MODEL_PATH))
+        sig_model = sig_mod.load_model() if self.s.use_edge else None
 
         opps = []
         for k, inst in enumerate(targets):
@@ -318,7 +355,8 @@ class Engine:
             step(66 + 32 * k / max(len(targets), 1), f"Analisando {inst.symbol}")
             try:
                 o = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
-                                       now=now, events=ctx.events, bk_model=bk_model)
+                                       now=now, events=ctx.events, bk_model=bk_model, sig_model=sig_model,
+                                       strength_closed=st_closed)
             except Exception as e:  # noqa: BLE001 - isolate per-instrument failures
                 errors[inst.symbol] = f"erro na análise: {e}"
                 continue
@@ -356,12 +394,15 @@ class Engine:
         fx_h1 = {k: v.frames["H1"] for k, v in rest.items() if not v.inst.is_metal}
         met_h1 = {inst.base: data[inst.symbol].frames["H1"]} if inst.is_metal else {}
         strength = strength_mod.compute(fx_h1, met_h1)
+        st_closed = _closed_strength(fx_h1, met_h1, now) if self.s.use_edge else None
         fmodel = FundamentalModel(ctx)
         sess = sessions.state(now)
         prices = {k: v.price for k, v in rest.items()}
         bk_model = bk_mod.load_model(bk_mod.MODEL_PATHS.get(self.s.breakout_plan, bk_mod.MODEL_PATH))
+        sig_model = sig_mod.load_model() if self.s.use_edge else None
         opp = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
-                                 now=now, events=ctx.events, bk_model=bk_model)
+                                 now=now, events=ctx.events, bk_model=bk_model, sig_model=sig_model,
+                                 strength_closed=st_closed)
         step(100, "Concluído")
         return AssetResult(now, sess, inst, data[inst.symbol], opp, strength, fmodel, ctx, errors, self.s)
 

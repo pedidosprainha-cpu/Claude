@@ -40,7 +40,7 @@ from fxengine.config import Settings  # noqa: E402
 from fxengine.data import yahoo  # noqa: E402
 from fxengine.data.http import Http  # noqa: E402
 from fxengine.data.provider import InstrumentData, build_frames  # noqa: E402
-from fxengine.instruments import FX_PAIRS, UNIVERSE  # noqa: E402
+from fxengine.instruments import FX_PAIRS, UNIVERSE, typical_spread_pips  # noqa: E402
 
 M15_BARS = 480            # live profile: 5 days of M15
 H1_BARS = 528             # live profile: ~1 month of H1
@@ -51,13 +51,7 @@ METAL_SPREAD = {"XAUUSD": 3.0, "XAGUSD": 3.0, "XPTUSD": 40.0, "XPDUSD": 60.0}
 
 def spread_pips(sym: str) -> float:
     """Conservative typical retail spreads (no historical bid/ask is available)."""
-    if sym in METAL_SPREAD:
-        return METAL_SPREAD[sym]
-    if sym in MAJORS:
-        return 1.0
-    if sym in {"EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "EURCHF", "CADJPY", "CHFJPY"}:
-        return 1.8
-    return 2.6
+    return typical_spread_pips(sym)
 
 
 class StrengthAt:

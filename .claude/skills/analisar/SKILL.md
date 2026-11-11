@@ -10,7 +10,7 @@ Exemplos: `-a metais`, `-a EURUSD,XAUUSD --detalhe`, `--saldo 25000 --risco 0.5`
 
 ## Passos
 
-1. Na raiz do repositório, rode a varredura ao vivo (leva ~10 s):
+1. Na raiz do repositório, rode a varredura ao vivo (leva ~15 s):
 
    ```bash
    mkdir -p reports && python3 -m fxengine scan --json reports/ultimo.json $ARGUMENTS
@@ -31,7 +31,11 @@ Exemplos: `-a metais`, `-a EURUSD,XAUUSD --detalhe`, `--saldo 25000 --risco 0.5`
 4. Responda em português, curto e direto:
    - **Decisão**: EXECUTAR ou NÃO EXECUTAR agora.
    - Ativo, lado, preço de entrada (bid/ask e horário da cotação), stop, TP1, TP2,
-     R:R, lote para o saldo/risco usados, probabilidade histórica (edge) e nota.
+     regra de saída (stop móvel após +1R, encerrar em 48 h), lote para o saldo/risco usados,
+     probabilidade de lucro e expectativa do modelo histórico calibrado, e nota.
+   - Seja honesto sobre a validação: para entradas a mercado, nem os melhores sinais do modelo
+     tiveram vantagem comprovada depois do spread (expectativa perto de zero; ver
+     `research/RESULTADOS_SINAL.json`). Recomende risco pequeno.
    - 3–5 razões principais e 2–3 riscos; a regra de invalidação.
    - Se o motor não recomendou entrada: diga por quê (gates) e mostre o melhor
      candidato e o que precisaria mudar.

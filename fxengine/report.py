@@ -50,12 +50,23 @@ def plan_lines(o: Opportunity, tz: str) -> list[str]:
         f"{o.quote_source} {o.quote_ts:%H:%M:%S} UTC)",
         f"  Entrada      {i.fmt(p.entry)}  ({side_px}, execução imediata a mercado)",
         f"  Stop loss    {i.fmt(p.sl)}  ({-p.sl_pips if d == 1 else p.sl_pips:+.1f} pips · {p.sl_atr_h1:.1f}× ATR H1) — {p.sl_basis}",
-        f"  Alvo 1       {i.fmt(p.tp1)}  ({p.tp1_pips * d:+.1f} pips · {p.rr1:.2f}R) — {p.tp1_basis}"
-        " → realizar 50% e mover stop p/ entrada",
-        f"  Alvo 2       {i.fmt(p.tp2)}  ({p.tp2_pips * d:+.1f} pips · {p.rr2:.2f}R) — {p.tp2_basis}",
+    ]
+    if p.exit_kind == "partial":
+        L += [f"  Alvo 1       {i.fmt(p.tp1)}  ({p.tp1_pips * d:+.1f} pips · {p.rr1:.2f}R) — {p.tp1_basis}"
+              " → realizar 50% e mover stop p/ entrada",
+              f"  Alvo 2       {i.fmt(p.tp2)}  ({p.tp2_pips * d:+.1f} pips · {p.rr2:.2f}R) — {p.tp2_basis}"]
+    else:
+        L += [f"  +1R          {i.fmt(p.tp1)}  ({p.tp1_pips * d:+.1f} pips) — {p.tp1_basis}",
+              f"  Saída        {p.exit_rule}" + (f"; encerrar a mercado após {p.horizon_h} h se ainda aberto"
+                                                 if p.horizon_h else "")]
+    L += [
         f"  Tamanho      {p.lots:.2f} lote · risco {o_ccy(o)} {p.risk_amount:,.2f} · valor do pip/lote "
         f"{o_ccy(o)} {p.pip_value_lot:,.2f}",
     ]
+    if o.signal is not None:
+        sg = o.signal
+        L.append(f"  Histórico    lucro em {sg.p * 100:.0f}% de sinais parecidos · expectativa {sg.ev_r:+.2f}R "
+                 f"(modelo calibrado, 32 ativos, 2+ anos) · {'entre os melhores sinais' if sg.passes else 'fora dos melhores sinais'}")
     if o.edge is not None:
         e = o.edge
         L.append(f"  Edge hist.   P(TP1 antes do SL) ≈ {e.p_post * 100:.0f}% (bruto {e.win_rate * 100:.0f}%, n={e.n} "
@@ -130,12 +141,12 @@ def render_text(r: ScanResult, tz: str = "America/Sao_Paulo", detail: bool = Fal
             out.append("  Exposição equivalente (não somar posições): " + ", ".join(dup))
 
     out += ["", THIN, f" RANKING (top {s.top_n})", THIN,
-            "  #  Ativo   Lado    Score Nota  Téc  Quant Força  Fund  Regime            R:R1  P(TP1)  Status"]
+            "  #  Ativo   Lado    Score Nota  Téc  Quant Força  Fund  Regime            R:R1 P(lucro) Status"]
     for k, o in enumerate(r.opportunities[: s.top_n], 1):
         c = o.components
         out.append(f" {k:>2}  {o.symbol:<7} {o.side:<6} {o.score:6.1f}  {o.grade:<3} {c['technical']:+5.0f} {c['quant']:+5.0f}"
                    f" {c['strength']:+5.0f} {c['fundamental']:+5.0f}  {o.quant.regime:<17} {o.plan.rr1:4.2f}"
-                   f"  {_pct(o.edge.p_post if o.edge else None):>5}   {_status(o, s.min_score)}")
+                   f"  {_pct(o.signal.p if o.signal else (o.edge.p_post if o.edge else None)):>5}   {_status(o, s.min_score)}")
 
     out += ["", THIN, " FORÇA RELATIVA DAS MOEDAS (z-score ponderado 4h/24h/5d, 28 cruzamentos)", THIN]
     for c, v in r.strength.ranking:
@@ -207,6 +218,10 @@ def _opp_dict(o: Opportunity) -> dict:
         "composite": round(o.composite, 2),
         "multipliers": {k: {"value": round(v, 3), "note": n} for k, (v, n) in o.multipliers.items()},
         "regime": o.quant.regime, "hurst": round(o.quant.hurst, 3), "variance_ratio": round(o.quant.vr, 3),
+        "signal": None if o.signal is None else {
+            "p_profit": round(o.signal.p, 3), "expected_r": round(o.signal.ev_r, 3), "grade": o.signal.grade,
+            "top_signal": bool(o.signal.passes), "opposite_expected_r": round(o.signal.other_ev_r, 3)},
+        "exit_rule": o.plan.exit_rule,
         "edge": None if o.edge is None else {
             "n": o.edge.n, "win_rate": round(o.edge.win_rate, 3), "p_post": round(o.edge.p_post, 3),
             "expectancy_r": round(o.edge.expectancy_r, 3), "exp_post_r": round(o.edge.exp_post_r, 3),

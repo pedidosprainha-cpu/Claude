@@ -286,8 +286,9 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit) {
 
         SectionCard("Precisão x velocidade") {
             ToggleRow(
-                "Estudo de edge histórico",
-                "Testa o setup em 1 ano de dados para estimar a probabilidade. Mais preciso, um pouco mais lento.",
+                "Modelo histórico",
+                "Probabilidade e expectativa calibradas em 2+ anos de 32 ativos, filtro dos piores trades e plano " +
+                    "validado (stop 2× ATR H1 + stop móvel). Desligado: volta ao plano estrutural antigo.",
                 settings.useEdge,
             ) { onChange(settings.copy(useEdge = it)) }
             ToggleRow(

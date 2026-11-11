@@ -210,15 +210,35 @@ fun OpportunityDetail(o: Opportunity, referenceOnly: Boolean, showActions: Boole
             Spacer(Modifier.height(4.dp))
             PlanRow("Entrada", o.entry, (if (o.isBuy) "compra no ask" else "venda no bid") + " · bid ${o.bid} / ask ${o.ask} · ${o.quoteTime}")
             PlanRow("Stop", o.sl, "${o.slPips.f(1)} pips · ${o.slBasis}", Fx.Sell)
-            PlanRow("Alvo 1", o.tp1, "${(o.tp1Pips).f(1)} pips · ${o.rr1.f()}R · realizar 50% e stop na entrada", Fx.Buy)
-            PlanRow("Alvo 2", o.tp2, "${(o.tp2Pips).f(1)} pips · ${o.rr2.f()}R", Fx.Buy)
+            val timeStop = if (o.horizonH > 0) " · ainda aberto após ${o.horizonH} h: encerrar a mercado" else ""
+            when (o.exitKind) {
+                "trail" -> {
+                    PlanRow("+1R", o.tp1, "${o.tp1Pips.f(1)} pips · a partir daqui o stop vira móvel", Fx.Buy)
+                    PlanRow("Saída", "stop móvel", o.exitRule + timeStop)
+                }
+                "partial" -> {
+                    PlanRow("Alvo 1", o.tp1, "${(o.tp1Pips).f(1)} pips · ${o.rr1.f()}R · realizar 50% e stop na entrada", Fx.Buy)
+                    PlanRow("Alvo 2", o.tp2, "${(o.tp2Pips).f(1)} pips · ${o.rr2.f()}R", Fx.Buy)
+                }
+                else -> PlanRow("Alvo", o.tp1, "${o.tp1Pips.f(1)} pips · ${o.rr1.f()}R · ${o.exitRule}$timeStop", Fx.Buy)
+            }
             PlanRow("Lote", o.lots.f(2), "risco ${money(o.riskAmount)} · spread ${o.spreadPips.f(1)} pips")
             o.edge?.let { e ->
-                PlanRow(
-                    "Prob. TP1", "${(e.p * 100).toInt()}%",
-                    "${e.n} sinais parecidos em 1 ano · expectativa ${if (e.expR >= 0) "+" else ""}${e.expR.f()}R por trade",
-                    if (e.expR >= 0) Fx.Buy else Fx.Warn,
-                )
+                val ev = "${if (e.expR >= 0) "+" else ""}${e.expR.f()}R"
+                if (e.fromModel) {
+                    PlanRow(
+                        "Prob. de lucro", "${(e.p * 100).toInt()}%",
+                        "expectativa $ev por trade em sinais parecidos (modelo histórico, ${"%,d".format(e.n).replace(',', '.')} " +
+                            "barras de 32 ativos)" + (if (e.passes) " · entre os melhores sinais" else " · fora dos melhores sinais"),
+                        if (e.passes && e.expR >= 0) Fx.Buy else Fx.Warn,
+                    )
+                } else {
+                    PlanRow(
+                        "Prob. TP1", "${(e.p * 100).toInt()}%",
+                        "${e.n} sinais parecidos em 1 ano · expectativa $ev por trade",
+                        if (e.expR >= 0) Fx.Buy else Fx.Warn,
+                    )
+                }
             }
             Spacer(Modifier.height(4.dp))
             Text("Invalidação: ${o.invalidation}", color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp)
@@ -288,5 +308,55 @@ fun OpportunityRow(rank: Int, o: Opportunity, onClick: () -> Unit) {
             }
             GradeBadge(o.grade, o.score, 46)
         }
+    }
+}
+
+/** How the main analysis performed on the historical replay (research/train_signal_model.py). */
+@Composable
+fun SignalModelCard(m: com.fxengine.app.data.SignalModelInfo) {
+    fun r(v: Double) = "${if (v >= 0) "+" else ""}${v.f(2)}R"
+    SectionCard("Validação histórica da análise") {
+        Text(
+            "${"%,d".format(m.bars).replace(',', '.')} horas de mercado de ${m.instruments} ativos (${m.period}) " +
+                "reconstituídas sem olhar o futuro, entrada a mercado com spread, avaliadas em meses que o modelo " +
+                "não viu. Plano: ${m.geometry}.",
+            color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("Antes", color = Fx.Muted, fontSize = 12.sp)
+                Text("${r(m.oldTestMeanR ?: m.baselineTestMeanR)} por trade", color = Fx.Sell, fontWeight = FontWeight.Bold)
+                m.oldTestWin?.let {
+                    Text("${(it * 100).toInt()}% no lucro", color = Fx.Muted, fontSize = 12.sp)
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Agora (${m.filterPct}% melhores)", color = Fx.Muted, fontSize = 12.sp)
+                Text("${r(m.testMeanR)} por trade", color = if (m.testMeanR >= 0) Fx.Buy else Fx.Warn,
+                    fontWeight = FontWeight.Bold)
+                Text("${(m.testWin * 100).toInt()}% no lucro · ${m.testN} trades", color = Fx.Muted, fontSize = 12.sp)
+            }
+        }
+        Text("Teste final (meses que o modelo não viu): ${m.testPeriod}", color = Fx.Muted, fontSize = 11.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Em vários períodos (walk-forward): média ${r(m.wfMeanR)} por trade, pior período ${r(m.wfWorstR)}, " +
+                "${(m.wfPosShare * 100).toInt()}% dos períodos positivos. Probabilidade prevista ${(m.pMean * 100).toInt()}% " +
+                "× real ${(m.winReal * 100).toInt()}% no teste.",
+            color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (m.validated) {
+                "Resultado positivo validado em vários períodos e no teste final, simulado com spreads típicos. " +
+                    "Passado não garante futuro: use risco pequeno."
+            } else {
+                "Nenhuma regra de entrada a mercado teve vantagem comprovada em todos os períodos depois do spread. " +
+                    "A análise agora evita os piores trades e mostra a probabilidade real, mas a expectativa dos " +
+                    "melhores sinais fica perto de zero. Use risco pequeno."
+            },
+            color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
+        )
     }
 }

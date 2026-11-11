@@ -2,6 +2,10 @@ package com.fxengine.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import com.fxengine.app.ui.SignalModelCard
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -153,8 +157,18 @@ class ScreensTest {
         val live = load("sample_live.json")
         assertEquals(32, live.ranking.size)
         assertEquals(false, live.decision.execute)
+        val top = live.ranking.first()
+        assertTrue("model probability", top.edge?.fromModel == true && top.exitKind == "trail")
+        val m = live.signalModel
+        assertTrue("model card", m != null && m.bars > 100_000 && m.testN > 0)
         val exec = load("sample_exec.json")
         assertTrue(exec.decision.execute && exec.best != null)
+        assertTrue("old fixtures still parse", exec.best?.exitKind == "partial" && exec.signalModel == null)
+    }
+
+    @Test
+    fun signal_model_card() = shot("signal_model_card") {
+        Frame { Column(Modifier.padding(16.dp)) { SignalModelCard(load("sample_live.json").signalModel!!) } }
     }
 
     @Test

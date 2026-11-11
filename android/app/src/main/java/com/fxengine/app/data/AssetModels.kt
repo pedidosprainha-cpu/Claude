@@ -63,7 +63,7 @@ data class AssetEvent(val whenLocal: String, val ccy: String, val title: String,
 data class AssetHeadline(val whenLocal: String, val title: String, val tone: Int)
 
 data class PlanOverlay(val entry: Double, val sl: Double, val tp1: Double, val tp2: Double, val direction: Int,
-                       val show: Boolean)
+                       val show: Boolean, val exitKind: String = "partial")
 
 data class AssetResult(
     val symbol: String, val name: String, val isMetal: Boolean, val digits: Int,
@@ -77,6 +77,7 @@ data class AssetResult(
     val macro: List<String>, val events: List<AssetEvent>, val headlines: List<AssetHeadline>,
     val breakouts: List<BreakoutItem>, val chartH1: Bars?, val chartM15: Bars?,
     val overlayLevels: List<Double>, val plan: PlanOverlay?, val dataIssues: List<String>, val elapsedS: Double,
+    val signalModel: SignalModelInfo? = null,
 )
 
 sealed interface AssetOutput {
@@ -171,8 +172,9 @@ fun parseAsset(raw: String): AssetOutput = try {
                 breakouts = j.optJSONArray("breakouts").jobjs(::parseItem),
                 chartH1 = parseBars(chart?.optJSONObject("H1")), chartM15 = parseBars(chart?.optJSONObject("M15")),
                 overlayLevels = ov?.optJSONArray("levels").let { a -> if (a == null) emptyList() else List(a.length()) { a.optDouble(it) } },
-                plan = pl?.let { PlanOverlay(it.jd("entry"), it.jd("sl"), it.jd("tp1"), it.jd("tp2"), it.optInt("direction", 1), it.optBoolean("show")) },
+                plan = pl?.let { PlanOverlay(it.jd("entry"), it.jd("sl"), it.jd("tp1"), it.jd("tp2"), it.optInt("direction", 1), it.optBoolean("show"), it.optString("exit_kind", "partial")) },
                 dataIssues = j.optJSONArray("data_issues").jstrings(), elapsedS = j.jd("elapsed_s"),
+                signalModel = parseSignalModel(j.optJSONObject("signal_model")),
             ),
             raw,
         )

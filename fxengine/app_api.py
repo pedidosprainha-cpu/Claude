@@ -16,6 +16,7 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from . import breakouts as bk
+from .analysis import signal_model as sig_mod
 from .config import Settings
 from .engine import Engine, Opportunity, ScanResult
 from .instruments import UNIVERSE
@@ -48,16 +49,40 @@ def order_text(o: Opportunity) -> str:
         f"{o.side} {o.symbol} a mercado",
         f"Entrada: {i.fmt(p.entry)}",
         f"Stop loss: {i.fmt(p.sl)} ({p.sl_pips:.1f} pips)",
-        f"Alvo 1: {i.fmt(p.tp1)} ({p.rr1:.2f}R) - realizar 50% e stop na entrada",
-        f"Alvo 2: {i.fmt(p.tp2)} ({p.rr2:.2f}R)",
-        f"Lote: {p.lots:.2f} (risco US$ {p.risk_amount:,.2f})",
-        f"Invalidação: {p.invalidation}",
     ]
+    if p.exit_kind == "trail":
+        lines += [f"+1R em {i.fmt(p.tp1)}: ativar stop móvel",
+                  f"Saída: {p.exit_rule}"]
+    elif p.exit_kind == "partial":
+        lines += [f"Alvo 1: {i.fmt(p.tp1)} ({p.rr1:.2f}R) - realizar 50% e stop na entrada",
+                  f"Alvo 2: {i.fmt(p.tp2)} ({p.rr2:.2f}R)"]
+    else:
+        lines += [f"Saída: {p.exit_rule}"]
+    lines += [f"Lote: {p.lots:.2f} (risco US$ {p.risk_amount:,.2f})",
+              f"Invalidação: {p.invalidation}"]
+    if o.signal is not None:
+        lines.append(f"Histórico de sinais parecidos: lucro em {o.signal.p * 100:.0f}% · expectativa "
+                     f"{o.signal.ev_r:+.2f}R")
     return "\n".join(lines)
 
 
+def edge_dict(o: Opportunity) -> dict | None:
+    """Probability/expectancy shown in the app: calibrated model when loaded, else the old study."""
+    sg = o.signal
+    if sg is not None:
+        m = sig_mod.load_model()
+        return {"p": _num(sg.p, 3), "raw": _num(sg.p, 3), "n": int((m.info if m else {}).get("bars", 0)),
+                "exp_r": _num(sg.ev_r), "pf": None, "avg_h": None, "source": "modelo", "passes": sg.passes,
+                "other_exp_r": _num(sg.other_ev_r)}
+    e = o.edge
+    if e is None:
+        return None
+    return {"p": _num(e.p_post, 3), "raw": _num(e.win_rate, 3), "n": e.n, "exp_r": _num(e.exp_post_r),
+            "pf": _num(e.profit_factor), "avg_h": _num(e.avg_bars, 0), "source": "estudo"}
+
+
 def opp_dict(o: Opportunity, tz: ZoneInfo, min_score: float) -> dict:
-    p, i, e = o.plan, o.inst, o.edge
+    p, i = o.plan, o.inst
     return {
         "symbol": o.symbol,
         "name": i.name or f"{i.base}/{i.quote}",
@@ -90,10 +115,11 @@ def opp_dict(o: Opportunity, tz: ZoneInfo, min_score: float) -> dict:
         "tp1_basis": p.tp1_basis,
         "tp2_basis": p.tp2_basis,
         "invalidation": p.invalidation,
-        "edge": None if e is None else {
-            "p": _num(e.p_post, 3), "raw": _num(e.win_rate, 3), "n": e.n,
-            "exp_r": _num(e.exp_post_r), "pf": _num(e.profit_factor), "avg_h": _num(e.avg_bars, 0),
-        },
+        "edge": edge_dict(o),
+        "exit_kind": p.exit_kind,
+        "exit_rule": p.exit_rule,
+        "trail_pips": _num(i.pips(p.trail_dist), 1),
+        "horizon_h": p.horizon_h,
         "components": [{"name": COMP[k], "value": _num(v, 0)} for k, v in o.components.items()],
         "multipliers": [{"name": k, "value": _num(v, 2), "note": n} for k, (v, n) in o.multipliers.items()],
         "regime": o.quant.regime,
@@ -133,6 +159,7 @@ def result_dict(r: ScanResult, tz_name: str = "America/Sao_Paulo", elapsed: floa
     rates = sorted((r.ctx.rates or {}).values(), key=lambda x: -x.rate)
     return {
         "ok": True,
+        "signal_model": sig_mod.model_summary() if s.use_edge else {"available": False},
         "timestamp": loc.strftime("%d/%m/%Y %H:%M"),
         "timestamp_utc": r.now.isoformat(),
         "weekday": DIAS[loc.weekday()],
@@ -469,10 +496,11 @@ def asset_result_dict(r, tz_name: str = "America/Sao_Paulo", elapsed: float = 0.
     out["overlay"] = {
         "levels": [z["value"] for z in lv],
         "plan": {"entry": p.entry, "sl": p.sl, "tp1": p.tp1, "tp2": p.tp2, "direction": o.direction,
-                 "show": bool(o.executable)},
+                 "show": bool(o.executable), "exit_kind": p.exit_kind},
     }
     issues = [f"{k}: {v}" for k, v in {**r.ctx.status, **r.errors}.items() if v not in ("ok", "sintético")]
     out["data_issues"] = issues[:6]
+    out["signal_model"] = sig_mod.model_summary() if s.use_edge else {"available": False}
     return out
 
 

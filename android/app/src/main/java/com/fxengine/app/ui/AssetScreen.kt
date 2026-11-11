@@ -101,6 +101,7 @@ fun AssetDetail(r: AssetResult) {
         }
 
         if (o != null) OpportunityDetail(o, referenceOnly = !o.executable)
+        r.signalModel?.let { SignalModelCard(it) }
 
         // breakouts of this instrument
         SectionCard("Rompimentos neste ativo") {

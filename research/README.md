@@ -1,7 +1,45 @@
-# Pesquisa — validação dos rompimentos
+# Pesquisa — validação da análise principal e dos rompimentos
 
-Scripts que medem e calibram o detector de rompimentos (`fxengine/breakouts.py`) e escolhem
-o plano de entrada e saída que o app recomenda.
+Scripts que medem e calibram o sinal principal do motor (`fxengine/analysis/signal_model.py`)
+e o detector de rompimentos (`fxengine/breakouts.py`), e escolhem os planos de entrada e
+saída que o app recomenda.
+
+## Análise principal (aba Analisar)
+
+```bash
+# 1) reconstituição: todas as barras H1 fechadas de 32 ativos (~2,6 anos), features da mesma
+#    função usada ao vivo e resultado de uma entrada a mercado nas duas direções, com spread,
+#    para 15 geometrias (stop 1/1,5/2 ATR H1 × saídas alvo fixo, break-even, stop móvel, parcial)
+python3 research/signal_replay.py                    # ~1 min → research/data/signal_events.pkl
+python3 research/signal_replay.py --grid swing --out research/data/signal_events_swing.pkl
+
+# 2) walk-forward (8 blocos de ~4 meses; o último é o teste, intocado) e modelo final
+python3 research/train_signal_model.py                         # ridge, 15 geometrias (rápido)
+python3 research/train_signal_model.py --model gbm --geoms "s20|tr10"   # modelo do app (~25 min)
+```
+
+- A geometria e o filtro (top q% dos sinais) são escolhidos pelo **pior bloco** do walk-forward;
+  a recalibração da probabilidade e da expectativa usa só previsões fora da amostra do
+  walk-forward; o bloco de teste é avaliado uma vez, no fim.
+- Grava `fxengine/data/signal_model.json` (usado pelo app e pelo CLI) e
+  `research/RESULTADOS_SINAL.json`.
+- Regra para `validated: true`: média > 0, ≥ 75% dos blocos positivos, pior bloco > −0,05R.
+
+Resultado atual (`research/RESULTADOS_SINAL.json`, modelo GBM, stop 2× ATR H1 + stop móvel 1 ATR
+após +1R, horizonte 48 h, filtro top 2%):
+
+| | trades | no lucro | R por trade |
+|---|---|---|---|
+| walk-forward, 6 blocos (média / pior bloco) | 165+ por bloco | — | +0,004R / −0,037R (2 de 6 positivos) |
+| teste final (10/07 → 06/11/2026) | 261 | 48,3% | −0,016R |
+| teste: tendência ingênua com o mesmo plano | 4.505 | 45,6% | −0,066R |
+| teste: lógica e plano antigos (stop 1 ATR, 50% em 1,5R) | 7.774 | 33,4% | −0,175R |
+
+Não validado pela regra (`validated: false`): o app usa o modelo para filtrar e calibrar e
+mostra esses números no cartão "Validação histórica da análise". O modelo linear (ridge) e o
+horizonte swing (até 5 dias) foram piores no walk-forward.
+
+## Rompimentos (aba Rompimentos)
 
 ```bash
 # 1) reconstituições walk-forward do monitor (sem olhar o futuro, com spread)

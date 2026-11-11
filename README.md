@@ -100,7 +100,8 @@ fxengine/
 - **regime** (tendência persistente a favor ×1.05, contra ×0.82);
 - **confluência** (quantas das 4 camadas concordam);
 - **espaço** até a próxima zona de S/R oposta, em R;
-- **edge** histórico (expectativa posterior do setup);
+- **histórico**: expectativa calibrada do modelo histórico para este sinal (sem o modelo:
+  edge do setup no último ano);
 - **spread** relativo ao stop, **liquidez** da sessão, **agenda**, **volatilidade** extrema;
 - **dia**: quanto da amplitude diária média (ADR, 20 dias) já foi usada. Se o preço já andou
   mais de 1 ADR a favor hoje (×0.85, risco de exaustão) ou o dia já usou mais de 130% da
@@ -119,7 +120,43 @@ Notas: A+ ≥ 65 · A ≥ 55 · B ≥ 45 · C ≥ 35 · D < 35. Só é recomenda
 - nenhum evento de alto impacto da moeda entre 45 min antes e 20 min depois;
 - spread ≤ 25% do stop;
 - o gráfico (técnico MTF) não pode estar contra a direção;
-- edge histórico não pode ser claramente negativo (< −0.15R com amostra ≥ 25).
+- o sinal precisa estar entre os **2% melhores do histórico** pelo modelo calibrado (sem o
+  modelo: edge histórico não pode ser < −0.15R com amostra ≥ 25).
+
+### Validação histórica da análise principal
+
+A análise principal foi reconstituída sem olhar o futuro em todas as horas de 32 ativos
+(abr/2024 → nov/2026, ~500 mil barras H1), com entrada a mercado e spread típico, nas duas
+direções (`research/signal_replay.py`). Medido fora da amostra:
+
+| bloco de teste (jul → nov/2026, nunca visto) | trades | no lucro | R por trade |
+|---|---|---|---|
+| lógica e plano antigos (tendência + stop curto + 50% em 1,5R) | 7.774 | 33% | **−0,17R** |
+| tendência com o plano novo | 4.505 | 46% | −0,07R |
+| **modelo novo (2% melhores sinais, plano novo)** | 261 | 48% | **−0,02R** |
+
+- Entrar em qualquer hora perde de −0,07R a −0,19R por trade (o spread), e **seguir a
+  tendência de H1/H4/D1 foi pior que entrar ao acaso** no horizonte de horas.
+- No walk-forward (6 períodos de ~4 meses), os 2% melhores sinais do modelo ficaram em média
+  em **+0,004R** por trade (pior período −0,04R, 2 de 6 positivos). **Não passa** na regra de
+  vantagem comprovada (≥ 75% dos períodos positivos): para entradas a mercado, a expectativa
+  dos melhores sinais fica perto de zero depois do spread.
+- Probabilidade prevista × real nos trades do teste: 51% × 48% (levemente otimista).
+
+Por isso o motor agora usa um **modelo histórico calibrado** (`fxengine/analysis/signal_model.py`,
+GBM treinado em `research/train_signal_model.py`) em toda análise:
+
+- **probabilidade de lucro e expectativa em R** dos sinais parecidos, recalibradas fora da
+  amostra (substituem o antigo estudo de edge de 1 ano por ativo);
+- **filtro**: só recomenda executar se o sinal estiver entre os melhores do histórico
+  (o mesmo corte usado na validação); fora dele, "histórico desfavorável";
+- **plano validado**: stop 2× ATR H1 e, a partir de +1R, stop móvel 1 ATR H1 atrás do melhor
+  preço; encerrar a mercado em 48 h se nada acontecer. Stops estruturais curtos com alvos
+  fixos foram a geometria que mais perdeu no histórico, porque o spread pesa mais;
+- aviso quando o histórico favorece o lado oposto ao da análise.
+
+O ajuste "Modelo histórico" (app) / `--sem-edge` (CLI) desliga o modelo e volta ao plano
+estrutural antigo.
 
 ### Plano do trade
 

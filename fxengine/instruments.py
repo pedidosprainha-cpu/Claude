@@ -85,3 +85,20 @@ def select(spec: str | None) -> list[Instrument]:
     if s in ("metals", "metais"):
         return list(METALS)
     return [get(x.strip()) for x in spec.split(",") if x.strip()]
+
+
+# Conservative typical retail spreads in pips (no historical bid/ask is available). The
+# historical replays and the signal model were built with these values.
+_MAJOR_PAIRS = {"EURUSD", "USDJPY", "GBPUSD", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"}
+_LIQUID_CROSSES = {"EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "EURCHF", "CADJPY", "CHFJPY"}
+_METAL_SPREAD = {"XAUUSD": 3.0, "XAGUSD": 3.0, "XPTUSD": 40.0, "XPDUSD": 60.0}
+
+
+def typical_spread_pips(symbol: str) -> float:
+    if symbol in _METAL_SPREAD:
+        return _METAL_SPREAD[symbol]
+    if symbol in _MAJOR_PAIRS:
+        return 1.0
+    if symbol in _LIQUID_CROSSES:
+        return 1.8
+    return 2.6
