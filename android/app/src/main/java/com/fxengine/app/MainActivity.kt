@@ -12,6 +12,7 @@ import com.fxengine.app.monitor.Notifications
 import com.fxengine.app.ui.FxApp
 import com.fxengine.app.ui.MainViewModel
 import com.fxengine.app.ui.TAB_BREAKOUTS
+import com.fxengine.app.ui.TAB_EXPLOSIONS
 import com.fxengine.app.ui.theme.FxTheme
 
 class MainActivity : ComponentActivity() {
@@ -32,8 +33,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
-        if (intent?.getStringExtra(Notifications.EXTRA_TAB) == Notifications.TAB_BREAKOUTS) {
-            openTab.value = TAB_BREAKOUTS
+        when (intent?.getStringExtra(Notifications.EXTRA_TAB)) {
+            Notifications.TAB_BREAKOUTS -> openTab.value = TAB_BREAKOUTS
+            Notifications.TAB_EXPLOSIONS -> openTab.value = TAB_EXPLOSIONS
         }
     }
 }

@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="fxengine",
         description="Motor de análise gráfica, quantitativa e fundamentalista de Forex e metais "
                     "— encontra a melhor entrada a mercado agora.")
-    p.add_argument("cmd", nargs="?", default="scan", choices=["scan", "analisar", "analyze", "rompimentos", "ativo"],
+    p.add_argument("cmd", nargs="?", default="scan", choices=["scan", "analisar", "analyze", "rompimentos", "ativo", "explosoes"],
                    help="scan/analisar = varrer o universo (padrão); analyze = detalhar ativos (use --ativos); "
                         "rompimentos = detector de rompimentos em tempo real")
     p.add_argument("--monitorar", type=int, metavar="SEG", default=0,
@@ -52,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         s.min_score = a.min_score
     if a.cmd == "rompimentos":
         return run_breakouts(s, a)
+    if a.cmd == "explosoes":
+        return run_explosions(s, a)
     if a.cmd == "ativo":
         return run_asset(s, a)
     t0 = time.time()
@@ -209,3 +211,29 @@ def run_asset(s: Settings, a) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def run_explosions(s: Settings, a) -> int:
+    """Probability of a price explosion in the next hours: python -m fxengine explosoes"""
+    from . import explosions as xp
+    from .analysis import explosion as exm
+
+    m = exm.load_model()
+    if m is None:
+        print("modelo de explosões não encontrado (rode research/train_explosion_model.py)", file=sys.stderr)
+        return 2
+    alerts, errors, now = xp.scan(s, a.ativos)
+    t = m.info.get("test", {})
+    print(f"Explosão = movimento ≥ {m.theta}× ADR em até {m.horizon} h · {now:%d/%m %H:%M} UTC · "
+          f"teste: hora qualquer {t.get('base', 0) * 100:.0f}% → com alerta {t.get('prec_alert', 0) * 100:.0f}%")
+    print(f"{'Ativo':<8} {'Prob':>5}  {'Nível':<8} {'Movimento':>10}  Até    Motivos")
+    for x in alerts[:12]:
+        mv = f"{x.inst.pips(x.move_median):.0f} pips"
+        flag = "⚡" if x.alert else " "
+        print(f"{flag}{x.symbol:<7} {x.p * 100:4.0f}%  {x.level:<8} {mv:>10}  {x.until:%H:%M}  "
+              + "; ".join(x.drivers[:2]) + (f" | agenda: {x.events[0]}" if x.events else ""))
+    print("Direção não prevista (validação: AUC ≈ 0,52). Use o alerta para risco e atenção; ordens OCO dos dois "
+          "lados perderam no histórico.")
+    for k, v in list(errors.items())[:5]:
+        print(f"  falha {k}: {v}", file=sys.stderr)
+    return 0

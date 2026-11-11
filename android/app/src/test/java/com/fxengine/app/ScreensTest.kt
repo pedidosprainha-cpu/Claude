@@ -147,6 +147,41 @@ class ScreensTest {
         Frame { AssetPickerContent("Escolha o ativo", setOf("EURUSD"), multi = false, onDismiss = {}, onConfirm = {}) }
     }
 
+    private fun explosions(): com.fxengine.app.data.ExplosionResult {
+        val out = com.fxengine.app.data.parseExplosions(javaClass.getResource("/sample_explosions.json")!!.readText())
+        assertTrue("explosion fixture must parse", out is com.fxengine.app.data.ExplosionOutput.Ok)
+        return (out as com.fxengine.app.data.ExplosionOutput.Ok).result
+    }
+
+    @Test
+    fun parsesExplosionFixture() {
+        val r = explosions()
+        assertEquals(32, r.items.size)
+        assertTrue(r.alerts > 0 && r.items.first().alert && r.items.first().rangeLow.isNotBlank())
+        val m = r.model!!
+        assertTrue(m.validated && m.testPrecision > m.baseRate && !m.bracketValidated)
+    }
+
+    @Test
+    fun explosions_list() = shot("explosions_list") {
+        Frame { com.fxengine.app.ui.ExplosionContent(com.fxengine.app.monitor.ExplosionState(result = explosions()), onScan = {}) }
+    }
+
+    @Test
+    fun explosion_detail() = shot("explosion_detail") {
+        val r = explosions()
+        Frame {
+            Column(Modifier.padding(16.dp)) {
+                com.fxengine.app.ui.ExplosionDetail(r.items.first { it.level == "alta" }, r.model)
+            }
+        }
+    }
+
+    @Test
+    fun explosion_validation() = shot("explosion_validation") {
+        Frame { Column(Modifier.padding(16.dp)) { com.fxengine.app.ui.ExplosionValidationCard(explosions().model!!) } }
+    }
+
     @Test
     fun bottom_bar() = shot("bottom_bar") {
         Frame { BottomBar(1) {} }

@@ -39,6 +39,28 @@ Não validado pela regra (`validated: false`): o app usa o modelo para filtrar e
 mostra esses números no cartão "Validação histórica da análise". O modelo linear (ridge) e o
 horizonte swing (até 5 dias) foram piores no walk-forward.
 
+## Explosões de preço (aba Explosões)
+
+```bash
+python3 research/explosion_replay.py          # ~1 min → research/data/explosion_events.pkl
+python3 research/train_explosion_model.py     # ~25 min → fxengine/data/explosion_model.json
+```
+
+Explosão = movimento ≥ 0,5× ADR a partir do fechamento, para qualquer lado, em até 4 barras H1
+(13% das horas). Regras fixadas antes do teste: alerta = top 5% das previsões de treino;
+detecção validada se em todos os blocos do walk-forward o acerto dos alertas for ≥ 2× a taxa
+base e o modelo superar um GBM só com a hora da semana (AUC) em ≥ 5 de 6 blocos.
+
+| | walk-forward (6 blocos) | teste (13/07 → 09/11/2026) |
+|---|---|---|
+| acerto dos alertas / taxa base | 2,7× a 4,5× (média 3,3×) | 42,7% / 13,1% (3,3×) |
+| AUC modelo / só horário | 6/6 blocos acima | 0,727 / 0,681 |
+| nível extremo (top 1%) | — | 59,2% |
+| direção (AUC) | 0,47–0,56 (sem poder) | 0,555 |
+| OCO, melhor variante | −0,23R (0/6 blocos positivos) | −0,36R |
+
+Resultados completos em `research/RESULTADOS_EXPLOSAO.json`.
+
 ## Rompimentos (aba Rompimentos)
 
 ```bash

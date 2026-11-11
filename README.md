@@ -34,6 +34,12 @@ Carrega o histórico completo só do ativo escolhido; os outros pares entram em 
 (5 dias de M15 + 1 mês de H1), apenas para a força relativa das moedas — a análise de um
 ativo leva ≈5 s.
 
+Explosões de preço (probabilidade de movimento forte nas próximas 4 h):
+
+```bash
+python3 -m fxengine explosoes
+```
+
 Rompimentos (breakouts) em tempo real:
 
 ```bash
@@ -157,6 +163,39 @@ GBM treinado em `research/train_signal_model.py`) em toda análise:
 
 O ajuste "Modelo histórico" (app) / `--sem-edge` (CLI) desliga o modelo e volta ao plano
 estrutural antigo.
+
+### Detector de explosões de preço (aba Explosões)
+
+`python3 -m fxengine explosoes` · `fxengine/analysis/explosion.py` · `fxengine/explosions.py`
+
+A volatilidade é muito mais previsível que a direção. Ela se agrupa (GARCH, HAR-RV), compressões
+se expandem e a atividade segue a hora da semana. A cada barra H1 fechada, o detector mede em
+32 ativos a volatilidade realizada (HAR 4h/24h/120h; estimadores de Parkinson e Garman-Klass;
+EWMA curta/longa; razão de ATR), a compressão (percentil da largura de Bollinger,
+squeeze Bollinger-Keltner e sua duração, NR7, ranges em ADR), a entropia de permutação, os
+saltos (variação bipower), a curtose, a atividade típica das próximas 4 h da semana e o
+contexto do dia. Um GBM calibrado (Platt, fora da amostra) dá a **probabilidade de o preço
+andar ≥ 0,5× a amplitude diária média (ADR), para qualquer lado, em até 4 horas**.
+
+| teste final (jul → nov/2026, nunca visto) | acerto |
+|---|---|
+| hora qualquer (taxa base) | 13% |
+| squeeze clássico (Bollinger dentro de Keltner) | 11% |
+| só o horário, mesmo filtro (top 5%) | 35% |
+| **alerta do app (top 5%)** | **43%** (3,3×) |
+| **nível extremo (top 1%)** | **59%** |
+
+- Walk-forward: em todos os 6 períodos os alertas acertaram de 2,7× a 4,5× a taxa base, e o
+  modelo superou o horário puro em 6/6. A calibração bate decil a decil (ex.: 37% previsto ×
+  36% real no decil mais alto).
+- Os ativos explodem juntos (os alertas se concentram antes e na abertura de Nova York), então
+  o acerto varia muito de uma hora para outra; os números são médias de centenas de horas.
+- **A direção não é previsível** (AUC 0,52 ≈ moeda) e **ordens OCO dos dois lados perderam**
+  (−0,23R no walk-forward, −0,36R no teste): o app usa o alerta para gestão de risco e atenção
+  (alcance provável, stops que tendem a ser atingidos) e manda confirmar a direção nas outras
+  abas. Eventos de alto impacto da agenda aparecem à parte (não entram no modelo).
+- Com o monitor de rompimentos ligado, o app avisa a cada hora cheia quando um ativo entra em
+  alerta alto ou extremo (ajuste "Alertas de explosão").
 
 ### Plano do trade
 

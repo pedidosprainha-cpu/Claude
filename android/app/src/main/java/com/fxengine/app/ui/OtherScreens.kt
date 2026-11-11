@@ -296,6 +296,12 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit) {
                 "Inclui o sentimento das manchetes recentes na análise fundamental.",
                 settings.useNews,
             ) { onChange(settings.copy(useNews = it)) }
+            ToggleRow(
+                "Alertas de explosão",
+                "Com o monitor de rompimentos ligado, mede a chance de explosão a cada hora cheia e avisa quando " +
+                    "um ativo entra em alerta alto ou extremo.",
+                settings.explosionAlerts,
+            ) { onChange(settings.copy(explosionAlerts = it)) }
         }
 
         SectionCard("Sobre") {

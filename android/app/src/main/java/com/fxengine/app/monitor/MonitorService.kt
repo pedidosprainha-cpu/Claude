@@ -78,6 +78,10 @@ class MonitorService : Service() {
                     res.fills.take(5).forEach { Notifications.fill(this, it) }
                 }
             }
+            if (settings.explosionAlerts) {
+                // new reading once per hour (closed H1 bar); notify only high-probability alerts
+                ExplosionStore.hourlyAlerts(this).take(4).forEach { Notifications.explosion(this, it) }
+            }
             val next = System.currentTimeMillis() + interval
             BreakoutMonitor.setNext(next)
             val st = BreakoutMonitor.state.value

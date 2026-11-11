@@ -21,6 +21,7 @@ object Notifications {
     const val ONGOING_ID = 1001
     const val EXTRA_TAB = "open_tab"
     const val TAB_BREAKOUTS = "rompimentos"
+    const val TAB_EXPLOSIONS = "explosoes"
 
     fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
@@ -43,9 +44,9 @@ object Notifications {
         Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    private fun openApp(ctx: Context, requestCode: Int): PendingIntent {
+    private fun openApp(ctx: Context, requestCode: Int, tab: String = TAB_BREAKOUTS): PendingIntent {
         val i = Intent(ctx, MainActivity::class.java)
-            .putExtra(EXTRA_TAB, TAB_BREAKOUTS)
+            .putExtra(EXTRA_TAB, tab)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         return PendingIntent.getActivity(ctx, requestCode, i,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -135,6 +136,33 @@ object Notifications {
             .build()
         try {
             NotificationManagerCompat.from(ctx).notify(b.id.hashCode(), n)
+        } catch (_: SecurityException) {
+        }
+    }
+
+    fun explosion(ctx: Context, x: com.fxengine.app.data.ExplosionItem) {
+        if (!canPost(ctx)) return
+        val title = "⚡ ${x.symbol}: explosão ${x.levelLabel.lowercase()} · ${(x.p * 100).toInt()}% até ${x.until}"
+        val dir = when {
+            x.pUp == null -> "direção indefinida"
+            x.pUp >= 0.5 -> "viés de alta ${(x.pUp * 100).toInt()}%"
+            else -> "viés de baixa ${((1 - x.pUp) * 100).toInt()}%"
+        }
+        val body = "Movimento típico ≈ ${x.movePips.toInt()} pips ($dir)\n" +
+            "Alcance provável ${x.rangeLow} – ${x.rangeHigh} · confirme a direção antes de entrar" +
+            (if (x.events.isNotEmpty()) "\nAgenda: ${x.events.first()}" else "")
+        val n = NotificationCompat.Builder(ctx, CH_ALERTS)
+            .setSmallIcon(R.drawable.ic_stat_breakout)
+            .setContentTitle(title)
+            .setContentText("Movimento típico ≈ ${x.movePips.toInt()} pips · $dir")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(ctx, ("x" + x.symbol + x.until).hashCode(), TAB_EXPLOSIONS))
+            .build()
+        try {
+            NotificationManagerCompat.from(ctx).notify(("x" + x.symbol + x.until).hashCode(), n)
         } catch (_: SecurityException) {
         }
     }

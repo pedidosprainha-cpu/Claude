@@ -34,12 +34,14 @@ private data class Tab(val label: String, val icon: ImageVector)
 private val TABS = listOf(
     Tab("Analisar", Icons.Filled.PlayArrow),
     Tab("Rompimentos", Icons.Filled.Notifications),
+    Tab("Explosões", BoltIcon),
     Tab("Ranking", Icons.AutoMirrored.Filled.List),
     Tab("Mercado", Icons.Filled.Info),
     Tab("Ajustes", Icons.Filled.Settings),
 )
 
 const val TAB_BREAKOUTS = 1
+const val TAB_EXPLOSIONS = 2
 
 /** @param openTab tab requested from outside (e.g. tapping a breakout alert); consumed once. */
 @Composable
@@ -67,8 +69,9 @@ fun FxApp(vm: MainViewModel, openTab: Int? = null, onTabOpened: () -> Unit = {})
                 0 -> HomeScreen(state, onAnalyze = vm::analyze, onDismissError = vm::dismissError,
                     onSettings = vm::updateSettings)
                 TAB_BREAKOUTS -> BreakoutScreen(state.settings, vm::updateSettings, onOpenAsset = openAsset)
-                2 -> RankingScreen(state.result, onOpenAsset = openAsset)
-                3 -> MarketScreen(state.result)
+                TAB_EXPLOSIONS -> ExplosionScreen(onOpenAsset = openAsset)
+                3 -> RankingScreen(state.result, onOpenAsset = openAsset)
+                4 -> MarketScreen(state.result)
                 else -> SettingsScreen(state.settings, vm::updateSettings)
             }
         }
@@ -99,7 +102,7 @@ fun BottomBar(tab: Int, onTab: (Int) -> Unit) {
                 selected = tab == i,
                 onClick = { onTab(i) },
                 icon = { Icon(t.icon, contentDescription = t.label) },
-                label = { Text(t.label, maxLines = 1, softWrap = false, fontSize = 11.sp) },
+                label = { Text(t.label, maxLines = 1, softWrap = false, fontSize = 9.sp, letterSpacing = 0.sp) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = Fx.Blue, selectedTextColor = Fx.Blue,
                     indicatorColor = Fx.SurfaceHigh, unselectedIconColor = Fx.Muted,

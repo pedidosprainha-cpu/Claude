@@ -523,3 +523,106 @@ def analyze_asset(cache_dir: str, symbol: str, balance: float = 10_000.0, risk_p
     except Exception as e:  # noqa: BLE001
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
                            "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------- price explosions
+
+LEVEL_LABEL = {"extrema": "EXTREMA", "alta": "ALTA", "elevada": "ELEVADA", "baixa": "NORMAL"}
+
+
+def explosion_model_summary() -> dict:
+    from .analysis import explosion as exm
+    m = exm.load_model()
+    if m is None:
+        return {"available": False}
+    i, t = m.info, m.info.get("test", {})
+    wf = i.get("walk_forward", [])
+    return {
+        "available": True, "validated": m.validated, "period": i.get("period", ""), "bars": i.get("bars", 0),
+        "instruments": i.get("instruments", 0), "test_period": i.get("test_period", ""),
+        "theta": m.theta, "horizon": m.horizon, "alert_pct": round(float(i.get("alert_q", 0.05)) * 100),
+        "base_rate": t.get("base"), "test_precision": t.get("prec_alert"), "test_lift": t.get("lift"),
+        "test_precision_seasonal": t.get("prec_seasonal_alert"), "test_precision_extreme": t.get("prec_extrema"),
+        "test_n_alert": t.get("n_alert"), "test_auc": t.get("auc"), "test_auc_seasonal": t.get("auc_seas"),
+        "test_p_mean": t.get("p_mean_alert"), "test_move_alert": t.get("move_median_alert"),
+        "test_move_all": t.get("move_median_all"),
+        "wf_lift_min": min((r["lift"] for r in wf), default=None),
+        "wf_lift_mean": round(float(np.mean([r["lift"] for r in wf])), 2) if wf else None,
+        "wf_squeeze_precision": round(float(np.mean([r["prec_squeeze"] for r in wf if r.get("prec_squeeze")])), 3)
+        if wf else None,
+        "direction_useful": bool(i.get("dir_useful", False)),
+        "direction_auc": round(float(np.mean(i.get("dir_auc_wf", [0.5]))), 3),
+        "bracket_validated": bool(m.bracket.get("validated", False)),
+        "bracket_wf_mean_r": m.bracket.get("wf_mean_r"), "bracket_test": t.get("oco", {}),
+    }
+
+
+def explosion_dict(a, tz: ZoneInfo, now) -> dict:
+    i, p = a.inst, a.plan
+    mins_left = max(0, int((a.until - now).total_seconds() // 60))
+    side = None if a.p_up is None else ("alta" if a.p_up >= 0.5 else "baixa")
+    mid = (a.bid + a.ask) / 2
+    lo, hi = mid - a.move_median, mid + a.move_median
+    order = [f"⚡ {i.symbol}: {a.p * 100:.0f}% de chance de explosão até {a.until.astimezone(tz):%H:%M} "
+             f"(nível {LEVEL_LABEL[a.level].lower()})",
+             f"Movimento típico ≈ {i.pips(a.move_median):.0f} pips · alcance provável {i.fmt(lo)} – {i.fmt(hi)}",
+             "Direção não prevista pelo modelo: aguarde confirmação antes de entrar.",
+             f"Preço agora: bid {i.fmt(a.bid)} / ask {i.fmt(a.ask)}"]
+    return {
+        "symbol": i.symbol, "name": i.name or f"{i.base}/{i.quote}", "is_metal": i.is_metal,
+        "p": _num(a.p, 3), "level": a.level, "level_label": LEVEL_LABEL[a.level], "alert": a.alert,
+        "p_up": _num(a.p_up, 3), "side": side,
+        "adr_pips": _num(i.pips(a.adr), 1), "move_pips": _num(i.pips(a.move_median), 1),
+        "move_adr": _num(a.move_median / a.adr, 2),
+        "bid": i.fmt(a.bid), "ask": i.fmt(a.ask), "quote_time": a.quote_ts.astimezone(tz).strftime("%H:%M:%S"),
+        "tradeable": a.tradeable, "until": a.until.astimezone(tz).strftime("%H:%M"), "minutes_left": mins_left,
+        "drivers": a.drivers, "events": a.events,
+        "range_low": i.fmt(lo), "range_high": i.fmt(hi),
+        "plan": {"buy_stop": i.fmt(p["buy_stop"]), "sell_stop": i.fmt(p["sell_stop"]),
+                 "buy_sl": i.fmt(p["buy_sl"]), "sell_sl": i.fmt(p["sell_sl"]),
+                 "buy_tp": i.fmt(p["buy_tp"]) if p["buy_tp"] else "", "sell_tp": i.fmt(p["sell_tp"]) if p["sell_tp"] else "",
+                 "risk_pips": _num(i.pips(p["risk"]), 1), "lots": _num(p["lots"]), "risk_amount": _num(p["risk_amount"]),
+                 "exit_rule": p["exit_rule"], "stop_rule": p["stop_rule"], "hold_h": p["hold_h"],
+                 "validated": p["validated"]},
+        "order_text": "\n".join(order),
+    }
+
+
+def scan_explosions(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets: str = "all",
+                    tz_name: str = "America/Sao_Paulo", listener=None, offline: bool = False) -> str:
+    """Probability of a price explosion in the next hours for every instrument. Returns JSON."""
+    from . import explosions as xp
+    from . import sessions
+
+    def progress(done: int, total: int) -> None:
+        if listener is not None:
+            listener.onProgress(int(round(5 + 90 * done / max(total, 1))), f"Medindo volatilidade: {done}/{total}")
+
+    t0 = time.time()
+    try:
+        s = Settings(balance=float(balance), risk_pct=float(risk_pct), cache_dir=cache_dir, workers=6,
+                     offline=bool(offline))
+        os.makedirs(cache_dir, exist_ok=True)
+        alerts, errors, now = xp.scan(s, None if assets in (None, "", "all") else assets, progress=progress)
+        if not alerts:
+            return json.dumps({"ok": False, "error": "Sem dados de mercado. Verifique a internet.",
+                               "detail": "; ".join(f"{k}: {v}" for k, v in list(errors.items())[:6])},
+                              ensure_ascii=False)
+        tz = ZoneInfo(tz_name)
+        loc = now.astimezone(tz)
+        sess = sessions.state(now)
+        nxt = (now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)).astimezone(tz)
+        return json.dumps({
+            "ok": True, "kind": "explosions", "timestamp": loc.strftime("%d/%m/%Y %H:%M"),
+            "weekday": DIAS[loc.weekday()], "session": sess.label, "fx_open": sess.fx_open,
+            "metals_open": sess.metals_open, "scanned": len(alerts),
+            "alerts": sum(1 for a in alerts if a.alert),
+            "next_update": nxt.strftime("%H:%M"),
+            "items": [explosion_dict(a, tz, now) for a in alerts],
+            "model": explosion_model_summary(),
+            "data_issues": [f"{k}: {v}" for k, v in errors.items()][:6],
+            "elapsed_s": round(time.time() - t0, 1),
+        }, ensure_ascii=False, default=str)
+    except Exception as e:  # noqa: BLE001
+        return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
+                           "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)

@@ -14,6 +14,7 @@ data class AppSettings(
     val breakoutPlan: String = "mercado", // mercado (real-time market entry) | limite (limit on retest)
     val homeMode: String = "all",         // all = scan every instrument | asset = one instrument
     val focusSymbol: String = "EURUSD",   // instrument for the single-asset analysis
+    val explosionAlerts: Boolean = true,  // monitor: notify high-probability price explosions (hourly)
 )
 
 class Prefs(context: Context) {
@@ -31,6 +32,7 @@ class Prefs(context: Context) {
         breakoutPlan = sp.getString("breakout_plan", "mercado") ?: "mercado",
         homeMode = sp.getString("home_mode", "all") ?: "all",
         focusSymbol = sp.getString("focus_symbol", "EURUSD") ?: "EURUSD",
+        explosionAlerts = sp.getBoolean("explosion_alerts", true),
     )
 
     fun save(s: AppSettings) {
@@ -45,6 +47,7 @@ class Prefs(context: Context) {
             .putString("breakout_plan", s.breakoutPlan)
             .putString("home_mode", s.homeMode)
             .putString("focus_symbol", s.focusSymbol)
+            .putBoolean("explosion_alerts", s.explosionAlerts)
             .apply()
     }
 
@@ -70,5 +73,13 @@ class Prefs(context: Context) {
 
     fun loadBreakouts(): Pair<String, Long>? = runCatching {
         if (lastBreakouts.exists()) lastBreakouts.readText() to lastBreakouts.lastModified() else null
+    }.getOrNull()
+
+    private val lastExplosions = File(context.filesDir, "ultimas_explosoes.json")
+
+    fun saveExplosions(raw: String) = runCatching { lastExplosions.writeText(raw) }
+
+    fun loadExplosions(): Pair<String, Long>? = runCatching {
+        if (lastExplosions.exists()) lastExplosions.readText() to lastExplosions.lastModified() else null
     }.getOrNull()
 }

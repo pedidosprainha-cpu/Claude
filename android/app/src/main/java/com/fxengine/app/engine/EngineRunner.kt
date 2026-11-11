@@ -69,6 +69,19 @@ class EngineRunner(context: Context) {
             settings.breakoutPlan,
         ).toString()
 
+    /** Probability of a price explosion per instrument (fxengine/app_api.py scan_explosions). */
+    fun scanExplosions(settings: AppSettings, onProgress: (Int, String) -> Unit): String =
+        api().callAttr(
+            "scan_explosions",
+            cacheDir(),
+            settings.balance,
+            settings.riskPct,
+            settings.assets,
+            TZ,
+            LambdaProgressListener(onProgress),
+            false,
+        ).toString()
+
     /** Deep analysis of one instrument (fxengine/app_api.py analyze_asset). */
     fun analyzeAsset(settings: AppSettings, symbol: String, onProgress: (Int, String) -> Unit): String =
         api().callAttr(
