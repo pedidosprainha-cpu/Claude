@@ -114,7 +114,7 @@ fun ExplosionContent(st: ExplosionState, onScan: () -> Unit, onOpenAsset: (Strin
                     color = if (alerts.isEmpty()) Fx.Muted else Fx.Warn, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 )
             }
-            items(alerts, key = { "a" + it.symbol }) { x -> ExplosionCard(x) { selected = x } }
+            items(alerts, key = { "a" + it.symbol }) { x -> ExplosionCard(x, r.model?.dirWfAccConf) { selected = x } }
             if (rest.isNotEmpty()) {
                 item {
                     Text("Demais ativos", color = Fx.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
@@ -210,12 +210,34 @@ private fun ProbBar(p: Double, color: Color) {
 
 private fun directionText(x: ExplosionItem): String = when {
     x.pUp == null -> "direção indefinida (confirme antes de entrar)"
-    x.pUp >= 0.5 -> "viés de alta ${pct(x.pUp)}"
-    else -> "viés de baixa ${pct(1 - x.pUp)}"
+    x.pUp >= 0.5 -> "se explodir: alta ${pct(x.pUp)}"
+    else -> "se explodir: baixa ${pct(1 - x.pUp)}"
+}
+
+/** Probable side of the explosion: arrow, calibrated probability and confidence. */
+@Composable
+private fun DirectionStrip(x: ExplosionItem, accConf: Double? = null) {
+    val up = x.pUp ?: return
+    val isUp = up >= 0.5
+    val col = if (!x.dirConfident) Fx.Muted else if (isUp) Fx.Buy else Fx.Sell
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(col.copy(alpha = 0.12f))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (isUp) "▲" else "▼", color = col, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Se explodir: ${if (isUp) "ALTA" else "BAIXA"} ${pct(x.pSide ?: maxOf(up, 1 - up))}",
+                color = if (x.dirConfident) col else Fx.Text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(if (x.dirConfident) "leitura de alta confiança" + (accConf?.let { " (acerto histórico ≈ ${pct(it)})" } ?: "")
+                else "confiança baixa (perto de 50/50)", color = Fx.Muted, fontSize = 11.sp)
+        }
+    }
 }
 
 @Composable
-fun ExplosionCard(x: ExplosionItem, onClick: () -> Unit) {
+fun ExplosionCard(x: ExplosionItem, accConf: Double? = null, onClick: () -> Unit) {
     val c = levelColor(x.level)
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -241,7 +263,11 @@ fun ExplosionCard(x: ExplosionItem, onClick: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             ProbBar(x.p, c)
             Spacer(Modifier.height(8.dp))
-            Text("Movimento típico ≈ ${x.movePips.f(0)} pips (${x.moveAdr.f(2)}× ADR) · ${directionText(x)}",
+            if (x.pUp != null) {
+                DirectionStrip(x, accConf)
+                Spacer(Modifier.height(6.dp))
+            }
+            Text("Movimento típico ≈ ${x.movePips.f(0)} pips (${x.moveAdr.f(2)}× ADR)",
                 color = Fx.Text, fontSize = 13.sp, lineHeight = 17.sp)
             x.drivers.take(2).forEach {
                 Text("• $it", color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp)
@@ -293,6 +319,27 @@ fun ExplosionDetail(x: ExplosionItem, m: ExplosionModelInfo?, onOpenAsset: (Stri
             Text("Movimento típico depois de um alerta: ${x.movePips.f(0)} pips · ${directionText(x)}",
                 color = Fx.Muted, fontSize = 12.sp)
         }
+        if (x.pUp != null) {
+            SectionCard("Direção provável") {
+                DirectionStrip(x, m?.dirWfAccConf)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Probabilidade calibrada de o preço andar ${((m?.theta ?: 0.5) * x.adrPips).f(0)} pips primeiro para " +
+                        "esse lado, se a explosão acontecer. Vem de um segundo modelo (força relativa das moedas e sua " +
+                        "aceleração, retornos de 1 h e 4 h, posição no range e nas máximas/mínimas do dia anterior, " +
+                        "tendência e horário). No histórico acertou o lado em ${pct(m?.dirWfAcc ?: 0.56)} das " +
+                        "explosões (${pct(m?.dirWfAccConf ?: 0.58)} nas leituras de alta confiança).",
+                    color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "É uma vantagem pequena: entrar a mercado nesse lado não deu lucro comprovado depois do spread " +
+                        "(${m?.dirTradeWfMeanR?.let { "${it.f(2)}R" } ?: "negativo"} por trade nos períodos de validação). " +
+                        "Use como viés, junto com a confirmação das abas Rompimentos e Analisar.",
+                    color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
+                )
+            }
+        }
         if (x.drivers.isNotEmpty()) SectionCard("O que o modelo está vendo") { Bullets(x.drivers, Fx.Warn, 6) }
         if (x.events.isNotEmpty()) {
             SectionCard("Agenda de alto impacto na janela", accent = Fx.Warn) {
@@ -309,8 +356,8 @@ fun ExplosionDetail(x: ExplosionItem, m: ExplosionModelInfo?, onOpenAsset: (Stri
                 listOf(
                     "Gestão de risco: stops menores que ≈${x.movePips.f(0)} pips tendem a ser atingidos nas próximas " +
                         "horas; reduza o lote ou espere.",
-                    "A explosão não diz o lado: o modelo de direção não passou na validação. Confirme a direção nas " +
-                        "abas Rompimentos e Analisar antes de entrar.",
+                    "Direção: viés modesto (acerto ≈ ${pct(m?.dirWfAcc ?: 0.56)}); prefira entrar só quando a leitura " +
+                        "for de alta confiança e outra aba confirmar o mesmo lado.",
                     "Ordens OCO dos dois lados perderam em média no histórico (" +
                         "${m?.bracketWfMeanR?.let { "${it.f(2)}R" } ?: "negativo"} por trade; muitas explosões acionam " +
                         "um lado e voltam): não use como entrada automática.",
@@ -382,7 +429,10 @@ fun ExplosionValidationCard(m: ExplosionModelInfo) {
                 "uma hora para outra; os números acima são a média de muitas horas. " +
                 (if (m.validated) "Detecção validada pela regra definida antes do teste. " else "Detecção NÃO validada pela regra. ") +
                 (if (m.directionUseful) "A direção tem algum poder preditivo (AUC ${m.directionAuc.f(2)})."
-                else "A direção da explosão não é previsível (AUC ${m.directionAuc.f(2)} ≈ cara ou coroa).") +
+                else "Direção: o lado previsto saiu primeiro em ${pct(m.dirWfAcc)} das explosões nos períodos de " +
+                    "validação (mínimo ${pct(m.dirWfAccMin)}; ${pct(m.dirWfAccConf)} nas leituras de alta confiança; " +
+                    "teste ${pct(m.dirTestAcc)} e ${pct(m.dirTestAccConf)}), mas não passou na regra de validação " +
+                    "(AUC ${m.directionAuc.f(2)} < 0,55) e entrar a mercado nesse lado não deu lucro comprovado.") +
                 (if (m.bracketValidated) " Ordens OCO tiveram expectativa positiva validada."
                 else " Ordens OCO dos dois lados perderam dinheiro depois do spread: use o alerta para risco e atenção, " +
                     "não como entrada automática."),

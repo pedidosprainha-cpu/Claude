@@ -160,6 +160,8 @@ class ScreensTest {
         assertTrue(r.alerts > 0 && r.items.first().alert && r.items.first().rangeLow.isNotBlank())
         val m = r.model!!
         assertTrue(m.validated && m.testPrecision > m.baseRate && !m.bracketValidated)
+        assertTrue("direction", r.items.all { it.pSide != null && it.pSide!! >= 0.5 } && r.items.any { it.dirConfident })
+        assertTrue(m.dirWfAcc > 0.5 && !m.dirTradeValidated)
     }
 
     @Test

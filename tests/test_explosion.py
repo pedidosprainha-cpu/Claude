@@ -54,5 +54,19 @@ def test_scan_explosions_offline(tmp_path, model):
     assert ps == sorted(ps, reverse=True) and all(0 < p < 1 for p in ps)
     it = d["items"][0]
     assert it["range_low"] < it["range_high"] and it["move_pips"] > 0
+    assert it["side"] in ("alta", "baixa") and 0.5 <= it["p_side"] < 1
     m = d["model"]
     assert m["available"] and m["bars"] > 100_000 and m["test_precision"] > m["base_rate"]
+
+
+def test_direction_is_symmetric_and_calibrated(model):
+    """The direction model is mirror-symmetric: flipping every signed input flips the probability."""
+    if not model.direction or model.direction.get("type") != "gbm":
+        pytest.skip("modelo de direção não gerado")
+    ff = ex.feature_frame(h1_walk(3000, seed=11), strength=35.0, strength_hist={"4": 20.0, "24": -5.0})
+    row = ff.iloc[-1]
+    feats = {k: float(row[k]) for k in ex.DIR_SIGNED + ex.DIR_CONTEXT if np.isfinite(row[k])}
+    mirror = {k: (-v if k in ex.DIR_SIGNED else v) for k, v in feats.items()}
+    p, q = model.p_up(feats), model.p_up(mirror)
+    assert 0 < p < 1 and abs(p + q - 1) < 1e-9
+    assert abs(row["dstr4"] - 0.15) < 1e-12 and abs(row["dstr24"] - 0.40) < 1e-12

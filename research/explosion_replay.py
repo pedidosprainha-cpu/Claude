@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from signal_replay import exits, load_h1  # noqa: E402
+from signal_replay import exits, load_h1, strength_series  # noqa: E402
 
 from fxengine.analysis import explosion as ex  # noqa: E402
 from fxengine.instruments import UNIVERSE, typical_spread_pips  # noqa: E402
@@ -84,10 +84,10 @@ def bracket(o, h, l, c, adr, idx, e, stop, xk, half):
 
 
 def replay_symbol(args) -> pd.DataFrame:
-    sym, h1 = args
+    sym, h1, st = args
     inst = UNIVERSE[sym]
     half = typical_spread_pips(sym) * inst.pip / 2
-    ff = ex.feature_frame(h1, inst.is_metal, HORIZON)
+    ff = ex.feature_frame(h1, inst.is_metal, HORIZON, st)
     o, h, l, c = (h1[k].to_numpy() for k in ("o", "h", "l", "c"))
     adr = ff["adr"].to_numpy()
     n = len(c)
@@ -97,7 +97,8 @@ def replay_symbol(args) -> pd.DataFrame:
     Hw, Lw = W(h, HORIZON)[idx + 1], W(l, HORIZON)[idx + 1]
     up = (Hw.max(1) - c[idx]) / adr[idx]
     dn = (c[idx] - Lw.min(1)) / adr[idx]
-    out = ff.iloc[idx][ex.FEATURES + ex.DIR_FEATURES].astype("float32").reset_index()
+    cols = list(dict.fromkeys(ex.FEATURES + ex.DIR_SIGNED + ex.DIR_CONTEXT))
+    out = ff.iloc[idx][cols].astype("float32").reset_index()
     out = out.rename(columns={out.columns[0]: "time"})
     out.insert(0, "symbol", sym)
     out["up"], out["dn"] = up.astype("float32"), dn.astype("float32")
@@ -128,8 +129,9 @@ def main() -> int:
     a = ap.parse_args()
     t0 = time.time()
     data = load_h1(a.cache, a.ttl_days)
+    st = strength_series(data)
     with ProcessPoolExecutor(a.workers) as pool:
-        parts = list(pool.map(replay_symbol, [(s, data[s]) for s in UNIVERSE]))
+        parts = list(pool.map(replay_symbol, [(s, data[s], st[s]) for s in UNIVERSE]))
     df = pd.concat(parts, ignore_index=True).sort_values(["time", "symbol"]).reset_index(drop=True)
     df.to_pickle(a.out)
     print(f"{len(df)} barras · {df.symbol.nunique()} ativos · {df.time.min():%d/%m/%Y} → {df.time.max():%d/%m/%Y} "

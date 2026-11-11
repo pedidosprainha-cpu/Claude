@@ -19,6 +19,7 @@ data class ExplosionItem(
     val until: String, val minutesLeft: Int,
     val drivers: List<String>, val events: List<String>, val plan: ExplosionPlan, val orderText: String,
     val rangeLow: String = "", val rangeHigh: String = "",
+    val pSide: Double? = null, val dirConfident: Boolean = false, val dirUseful: Boolean = false,
 )
 
 data class ExplosionModelInfo(
@@ -29,6 +30,9 @@ data class ExplosionModelInfo(
     val squeezePrecision: Double, val directionUseful: Boolean, val directionAuc: Double,
     val bracketValidated: Boolean, val bracketWfMeanR: Double?, val bracketTestMeanR: Double?, val bracketTestN: Int,
     val testPrecisionSeasonal: Double = 0.0, val testPrecisionExtreme: Double = 0.0,
+    val dirWfAcc: Double = 0.5, val dirWfAccConf: Double = 0.5, val dirWfAccMin: Double = 0.5,
+    val dirTestAcc: Double = 0.5, val dirTestAccConf: Double = 0.5,
+    val dirTradeWfMeanR: Double? = null, val dirTradeTestMeanR: Double? = null, val dirTradeValidated: Boolean = false,
 )
 
 data class ExplosionResult(
@@ -67,6 +71,7 @@ private fun parseExplosionItem(o: JSONObject): ExplosionItem {
             p.optInt("hold_h", 12), p.optBoolean("validated"),
         ),
         orderText = o.xs("order_text"), rangeLow = o.xs("range_low"), rangeHigh = o.xs("range_high"),
+        pSide = o.xdn("p_side"), dirConfident = o.optBoolean("dir_confident"), dirUseful = o.optBoolean("dir_useful"),
     )
 }
 
@@ -85,6 +90,13 @@ private fun parseExplosionModel(m: JSONObject?): ExplosionModelInfo? {
         directionAuc = m.xd("direction_auc", 0.5), bracketValidated = m.optBoolean("bracket_validated"),
         bracketWfMeanR = m.xdn("bracket_wf_mean_r"), bracketTestMeanR = bt.xdn("mean_r"), bracketTestN = bt.optInt("n"),
         testPrecisionSeasonal = m.xd("test_precision_seasonal"), testPrecisionExtreme = m.xd("test_precision_extreme"),
+        dirWfAcc = m.xd("direction_wf_acc", 0.5), dirWfAccConf = m.xd("direction_wf_acc_conf", 0.5),
+        dirWfAccMin = m.xd("direction_wf_acc_min", 0.5),
+        dirTestAcc = (m.optJSONObject("direction_test") ?: JSONObject()).xd("acc_alert", 0.5),
+        dirTestAccConf = (m.optJSONObject("direction_test") ?: JSONObject()).xd("acc_conf", 0.5),
+        dirTradeWfMeanR = (m.optJSONObject("direction_trade") ?: JSONObject()).xdn("wf_mean_r"),
+        dirTradeTestMeanR = ((m.optJSONObject("direction_test") ?: JSONObject()).optJSONObject("trade") ?: JSONObject()).xdn("mean_r"),
+        dirTradeValidated = (m.optJSONObject("direction_trade") ?: JSONObject()).optBoolean("validated"),
     )
 }
 

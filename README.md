@@ -190,10 +190,17 @@ andar ≥ 0,5× a amplitude diária média (ADR), para qualquer lado, em até 4 
   36% real no decil mais alto).
 - Os ativos explodem juntos (os alertas se concentram antes e na abertura de Nova York), então
   o acerto varia muito de uma hora para outra; os números são médias de centenas de horas.
-- **A direção não é previsível** (AUC 0,52 ≈ moeda) e **ordens OCO dos dois lados perderam**
-  (−0,23R no walk-forward, −0,36R no teste): o app usa o alerta para gestão de risco e atenção
-  (alcance provável, stops que tendem a ser atingidos) e manda confirmar a direção nas outras
-  abas. Eventos de alto impacto da agenda aparecem à parte (não entram no modelo).
+- **Direção** (`research/train_explosion_direction.py`): um segundo GBM, treinado só nas
+  explosões e espelhado (cada exemplo também invertido, previsão simetrizada), usa força
+  relativa das moedas e sua aceleração em 4 h/24 h, retornos de 1 h/4 h, posição no range de
+  12 h/24 h, distância às máximas/mínimas do dia anterior, tendência e horário. Mostra a
+  probabilidade calibrada do lado ("se explodir: alta 58%"). O lado previsto saiu primeiro em
+  **56%** das explosões no walk-forward (53% a 61% em todos os 6 períodos; **58%** nas leituras
+  de alta confiança) e em 60% / 70% no teste. É uma vantagem pequena: não passou na regra
+  (AUC médio 0,544 < 0,55) e **entrar a mercado no lado previsto perdeu** no walk-forward
+  (−0,07R; +0,10R no teste, insuficiente para validar). Ordens OCO dos dois lados também
+  perderam (−0,23R; −0,36R no teste). O app usa o alerta para risco e atenção e a direção
+  como viés a confirmar. Eventos de alto impacto da agenda aparecem à parte.
 - Com o monitor de rompimentos ligado, o app avisa a cada hora cheia quando um ativo entra em
   alerta alto ou extremo (ajuste "Alertas de explosão").
 

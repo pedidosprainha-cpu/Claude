@@ -61,6 +61,19 @@ base e o modelo superar um GBM só com a hora da semana (AUC) em ≥ 5 de 6 bloc
 
 Resultados completos em `research/RESULTADOS_EXPLOSAO.json`.
 
+Direção (`python3 research/train_explosion_direction.py`, ~20 min; atualiza o bloco
+`direction` de `explosion_model.json`): GBM espelhado nas explosões, alertas refeitos fora da
+amostra em cada bloco, trades a mercado no lado previsto avaliados com `signal_events.pkl`.
+
+| | walk-forward (6 blocos) | teste |
+|---|---|---|
+| lado previsto saiu primeiro (explosões em alerta) | 53%–61% (média 56%) | 60,4% |
+| leituras de alta confiança (30% mais confiantes) | 55%–71% (ponderado 58%) | 69,6% (358) |
+| AUC | 0,51–0,64 (média 0,544 < 0,55: **não útil pela regra**) | 0,563 |
+| trade a mercado no lado previsto (melhor geometria) | −0,07R (0/6 blocos positivos) | +0,10R (791) |
+
+Resultados em `research/RESULTADOS_EXPLOSAO_DIRECAO.json`.
+
 ## Rompimentos (aba Rompimentos)
 
 ```bash

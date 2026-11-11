@@ -56,7 +56,9 @@ Exemplos: `-a metais`, `-a EURUSD,XAUUSD --detalhe`, `--saldo 25000 --risco 0.5`
 
 7. Se o usuário perguntar sobre explosões de preço, volatilidade ou "qual vai se mexer", rode
    `python3 -m fxengine explosoes` e apresente os ativos em alerta (⚡), a probabilidade, o
-   movimento típico e os motivos. Deixe claro que a direção não é prevista.
+   movimento típico, a direção provável ("se explodir: alta/baixa X%", * = alta confiança) e
+   os motivos. Deixe claro que a direção é um viés pequeno (acerto ≈ 56%, 58% em alta
+   confiança) que não deu lucro comprovado como entrada a mercado.
 
 8. Regras: use somente números da saída do motor (nunca invente preço); cite o horário
    da cotação; inclua o aviso de que é análise automatizada, não recomendação de investimento.

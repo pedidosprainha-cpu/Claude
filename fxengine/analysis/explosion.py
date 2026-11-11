@@ -35,6 +35,10 @@ FEATURES = ["rv4", "rv24", "rv120", "pk24", "gk24", "ewm_ratio", "atr_ratio", "b
             "abs_ts24", "abs_ts120", "is_metal"]
 # signed features (positive = pressure upwards), used by the direction model
 DIR_FEATURES = ["cl24", "ts24", "ts120", "slope50", "rsi_c", "day_pos", "move_today", "d1_trend"]
+# direction model v2: signed pressure (flipped when a sample is mirrored) + unsigned context
+DIR_SIGNED = DIR_FEATURES + ["ret1", "ret4", "cl12", "ext21", "near_pdh", "near_pdl", "strength", "dstr4", "dstr24"]
+DIR_CONTEXT = ["h_sin", "h_cos", "dow_mon", "dow_fri", "adr_used", "rng24", "bbw_pct", "atr_ratio", "ewm_ratio",
+               "er20", "is_metal"]
 WARMUP_BARS = 1200
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "explosion_model.json")
 
@@ -74,12 +78,16 @@ def _perm_entropy(c: pd.Series, n: int = 24) -> pd.Series:
     return h / np.log(6)
 
 
-def feature_frame(h1: pd.DataFrame, is_metal: bool = False, horizon: int = 4) -> pd.DataFrame:
+def feature_frame(h1: pd.DataFrame, is_metal: bool = False, horizon: int = 4, strength=None,
+                  strength_hist: dict | None = None) -> pd.DataFrame:
+    """strength: pair score -100..100 as a Series aligned to h1 (replay) or a scalar (live, last bar);
+    strength_hist: live only, {"4": score 4 bars ago, "24": score 24 bars ago}."""
     with np.errstate(divide="ignore", invalid="ignore"):      # log(0) / x/0 become NaN or are clipped
-        return _feature_frame(h1, is_metal, horizon)
+        return _feature_frame(h1, is_metal, horizon, strength, strength_hist or {})
 
 
-def _feature_frame(h1: pd.DataFrame, is_metal: bool, horizon: int) -> pd.DataFrame:
+def _feature_frame(h1: pd.DataFrame, is_metal: bool, horizon: int, strength=None,
+                   strength_hist: dict | None = None) -> pd.DataFrame:
     c, h, l, o = h1.c, h1.h, h1.l, h1.o
     out = pd.DataFrame(index=h1.index)
     dc = _daily_context(h1)
@@ -166,6 +174,24 @@ def _feature_frame(h1: pd.DataFrame, is_metal: bool, horizon: int) -> pd.DataFra
     ema_d = c.ewm(span=20 * 24, adjust=False).mean()
     out["d1_trend"] = _clip((ema_d - ema_d.shift(120)) / adr, -3, 3)
 
+    out["ret1"] = _clip((c - c.shift(1)) / adr, -1, 1)
+    out["ret4"] = _clip((c - c.shift(4)) / adr, -2, 2)
+    hi12, lo12 = h.rolling(12).max(), l.rolling(12).min()
+    out["cl12"] = _clip(2 * (c - lo12) / (hi12 - lo12) - 1, -1, 1)
+    out["ext21"] = _clip((c - ta.ema(c, 21)) / a, -5, 5) / 2
+    out["near_pdh"] = _clip((c - dc.pdh) / adr, -2, 2)
+    out["near_pdl"] = _clip((c - dc.pdl) / adr, -2, 2)
+    # cross-sectional currency strength and its acceleration (flows between currencies)
+    if isinstance(strength, pd.Series):
+        st = strength.reindex(h1.index).ffill().fillna(0.0) / 100
+        out["strength"], out["dstr4"], out["dstr24"] = st, (st - st.shift(4)).fillna(0), (st - st.shift(24)).fillna(0)
+    else:
+        now = float(strength or 0.0) / 100
+        hist = strength_hist or {}
+        out["strength"] = now
+        out["dstr4"] = now - float(hist.get("4", strength or 0.0)) / 100
+        out["dstr24"] = now - float(hist.get("24", strength or 0.0)) / 100
+
     out["adr"], out["atr"] = adr, a
     return out.replace([np.inf, -np.inf], np.nan)
 
@@ -207,10 +233,24 @@ class ExplosionModel:
         d = self.direction
         if not d:
             return 0.5
+        if d.get("type") == "gbm":
+            sv = np.array([float(feats.get(f, 0.0)) for f in d["signed"]], dtype=float)
+            cv = np.array([float(feats.get(f, 0.0)) for f in d["context"]], dtype=float)
+            sv, cv = np.where(np.isfinite(sv), sv, 0.0), np.where(np.isfinite(cv), cv, 0.0)
+            z = (_gbm_logit(d["gbm"], np.r_[sv, cv]) - _gbm_logit(d["gbm"], np.r_[-sv, cv])) / 2   # symmetrised
+            a, b = d.get("platt", (1.0, 0.0))
+            return float(1 / (1 + np.exp(-(a * z + b))))
         x = np.array([float(feats.get(f, 0.0)) for f in d["features"]], dtype=float)
         x = np.where(np.isfinite(x), x, 0.0)
         z = ((x - np.asarray(d["mean"])) / np.asarray(d["std"])) @ np.asarray(d["coef"]) + d["intercept"]
         return float(1 / (1 + np.exp(-z)))
+
+    @property
+    def direction_useful(self) -> bool:
+        return bool(self.direction.get("useful", False))
+
+    def direction_confident(self, p_up: float) -> bool:
+        return abs(p_up - 0.5) >= float(self.direction.get("conf_cut", 0.5))
 
     def level(self, p: float) -> str:
         for cut, lab in self.levels:

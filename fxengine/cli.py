@@ -6,6 +6,8 @@ import os
 import sys
 import time
 
+import numpy as np
+
 from .config import Settings
 from .engine import Engine
 from .report import render_markdown, render_text, to_json
@@ -226,14 +228,19 @@ def run_explosions(s: Settings, a) -> int:
     t = m.info.get("test", {})
     print(f"Explosão = movimento ≥ {m.theta}× ADR em até {m.horizon} h · {now:%d/%m %H:%M} UTC · "
           f"teste: hora qualquer {t.get('base', 0) * 100:.0f}% → com alerta {t.get('prec_alert', 0) * 100:.0f}%")
-    print(f"{'Ativo':<8} {'Prob':>5}  {'Nível':<8} {'Movimento':>10}  Até    Motivos")
+    print(f"{'Ativo':<8} {'Prob':>5}  {'Nível':<8} {'Movimento':>10}  {'Se explodir':<16} Até    Motivos")
     for x in alerts[:12]:
         mv = f"{x.inst.pips(x.move_median):.0f} pips"
         flag = "⚡" if x.alert else " "
-        print(f"{flag}{x.symbol:<7} {x.p * 100:4.0f}%  {x.level:<8} {mv:>10}  {x.until:%H:%M}  "
+        side = "" if x.p_up is None else (f"{'▲ alta' if x.p_up >= 0.5 else '▼ baixa'} "
+                                          f"{max(x.p_up, 1 - x.p_up) * 100:.0f}%{'*' if x.dir_confident else ''}")
+        print(f"{flag}{x.symbol:<7} {x.p * 100:4.0f}%  {x.level:<8} {mv:>10}  {side:<16} {x.until:%H:%M}  "
               + "; ".join(x.drivers[:2]) + (f" | agenda: {x.events[0]}" if x.events else ""))
-    print("Direção não prevista (validação: AUC ≈ 0,52). Use o alerta para risco e atenção; ordens OCO dos dois "
-          "lados perderam no histórico.")
+    d = m.direction or {}
+    wf = d.get("wf", [])
+    acc = np.mean([r["acc_alert"] for r in wf]) * 100 if wf else 50
+    print(f"* direção de alta confiança. Acerto histórico do lado: {acc:.0f}% das explosões; vantagem pequena, "
+          "entrar a mercado nesse lado não deu lucro comprovado. Ordens OCO dos dois lados perderam.")
     for k, v in list(errors.items())[:5]:
         print(f"  falha {k}: {v}", file=sys.stderr)
     return 0

@@ -143,10 +143,11 @@ object Notifications {
     fun explosion(ctx: Context, x: com.fxengine.app.data.ExplosionItem) {
         if (!canPost(ctx)) return
         val title = "⚡ ${x.symbol}: explosão ${x.levelLabel.lowercase()} · ${(x.p * 100).toInt()}% até ${x.until}"
+        val conf = if (x.dirConfident) ", alta confiança" else ""
         val dir = when {
             x.pUp == null -> "direção indefinida"
-            x.pUp >= 0.5 -> "viés de alta ${(x.pUp * 100).toInt()}%"
-            else -> "viés de baixa ${((1 - x.pUp) * 100).toInt()}%"
+            x.pUp >= 0.5 -> "se explodir: ▲ alta ${(x.pUp * 100).toInt()}%$conf"
+            else -> "se explodir: ▼ baixa ${((1 - x.pUp) * 100).toInt()}%$conf"
         }
         val body = "Movimento típico ≈ ${x.movePips.toInt()} pips ($dir)\n" +
             "Alcance provável ${x.rangeLow} – ${x.rangeHigh} · confirme a direção antes de entrar" +

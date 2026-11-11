@@ -552,6 +552,15 @@ def explosion_model_summary() -> dict:
         if wf else None,
         "direction_useful": bool(i.get("dir_useful", False)),
         "direction_auc": round(float(np.mean(i.get("dir_auc_wf", [0.5]))), 3),
+        "direction_test": m.direction.get("test", {}) if m.direction else {},
+        "direction_wf_acc_conf": round(float(np.average([r["acc_conf"] for r in m.direction["wf"] if r.get("acc_conf")],
+                                                        weights=[r["n_conf"] for r in m.direction["wf"] if r.get("acc_conf")])), 4)
+        if m.direction.get("wf") else None,
+        "direction_wf_acc_min": round(float(min(r["acc_alert"] for r in m.direction["wf"])), 4)
+        if m.direction.get("wf") else None,
+        "direction_wf_acc": round(float(np.mean([r["acc_alert"] for r in m.direction.get("wf", [])])), 4)
+        if m.direction.get("wf") else None,
+        "direction_trade": m.direction.get("trade", {}) if m.direction else {},
         "bracket_validated": bool(m.bracket.get("validated", False)),
         "bracket_wf_mean_r": m.bracket.get("wf_mean_r"), "bracket_test": t.get("oco", {}),
     }
@@ -561,17 +570,21 @@ def explosion_dict(a, tz: ZoneInfo, now) -> dict:
     i, p = a.inst, a.plan
     mins_left = max(0, int((a.until - now).total_seconds() // 60))
     side = None if a.p_up is None else ("alta" if a.p_up >= 0.5 else "baixa")
+    p_side = None if a.p_up is None else max(a.p_up, 1 - a.p_up)
     mid = (a.bid + a.ask) / 2
     lo, hi = mid - a.move_median, mid + a.move_median
     order = [f"⚡ {i.symbol}: {a.p * 100:.0f}% de chance de explosão até {a.until.astimezone(tz):%H:%M} "
              f"(nível {LEVEL_LABEL[a.level].lower()})",
              f"Movimento típico ≈ {i.pips(a.move_median):.0f} pips · alcance provável {i.fmt(lo)} – {i.fmt(hi)}",
-             "Direção não prevista pelo modelo: aguarde confirmação antes de entrar.",
+             (f"Direção provável: {side} ({p_side * 100:.0f}%)" + (" · leitura de alta confiança" if a.dir_confident
+                                                                    else " · confiança baixa")
+              if side else "Direção não prevista pelo modelo: aguarde confirmação antes de entrar."),
              f"Preço agora: bid {i.fmt(a.bid)} / ask {i.fmt(a.ask)}"]
     return {
         "symbol": i.symbol, "name": i.name or f"{i.base}/{i.quote}", "is_metal": i.is_metal,
         "p": _num(a.p, 3), "level": a.level, "level_label": LEVEL_LABEL[a.level], "alert": a.alert,
-        "p_up": _num(a.p_up, 3), "side": side,
+        "p_up": _num(a.p_up, 3), "side": side, "p_side": _num(p_side, 3),
+        "dir_confident": bool(a.dir_confident), "dir_useful": bool(a.dir_useful),
         "adr_pips": _num(i.pips(a.adr), 1), "move_pips": _num(i.pips(a.move_median), 1),
         "move_adr": _num(a.move_median / a.adr, 2),
         "bid": i.fmt(a.bid), "ask": i.fmt(a.ask), "quote_time": a.quote_ts.astimezone(tz).strftime("%H:%M:%S"),

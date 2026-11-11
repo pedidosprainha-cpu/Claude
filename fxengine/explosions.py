@@ -29,7 +29,7 @@ class ExplosionAlert:
     p: float                    # calibrated probability of a move >= theta x ADR within the horizon
     level: str                  # extrema | alta | elevada | baixa
     alert: bool                 # inside the alert filter used in the validation
-    p_up: float | None          # probability the move starts upwards (None: no validated edge)
+    p_up: float | None          # probability the move starts upwards (None: no direction model)
     adr: float                  # average daily range (price units)
     move_median: float          # typical size of the move after an alert (price units)
     bid: float
@@ -41,6 +41,8 @@ class ExplosionAlert:
     events: list[str] = field(default_factory=list)
     plan: dict = field(default_factory=dict)
     feats: dict = field(default_factory=dict)
+    dir_confident: bool = False # direction among the most confident readings of the validation
+    dir_useful: bool = False    # the direction model passed its validation rule
 
     @property
     def symbol(self) -> str:
@@ -99,6 +101,26 @@ def bracket_plan(inst: Instrument, m: ex.ExplosionModel, bid: float, ask: float,
     }
 
 
+def _strength_points(data: dict, now) -> tuple:
+    """Currency strength on closed H1 bars now, 4 and 24 bars earlier (as in the replay)."""
+    from .analysis import strength as strength_mod
+    pts = []
+    for back in (0, 4, 24):
+        fx, met = {}, {}
+        for sym, d in data.items():
+            h1 = d.frames.get("H1")
+            if h1 is None or h1.empty:
+                continue
+            h1 = closed_bars(h1, now) if now is not None else h1.iloc[:-1]
+            h1 = h1.iloc[:len(h1) - back] if back else h1
+            (met if d.inst.is_metal else fx)[d.inst.base if d.inst.is_metal else sym] = h1
+        try:
+            pts.append(strength_mod.compute(fx, met))
+        except Exception:  # noqa: BLE001
+            pts.append(None)
+    return tuple(pts)
+
+
 def scan(s: Settings | None = None, spec: str | None = None, provider=None, progress=None,
          model: ex.ExplosionModel | None = None) -> tuple[list[ExplosionAlert], dict, datetime]:
     """Returns (alerts sorted by probability, errors, now)."""
@@ -121,6 +143,7 @@ def scan(s: Settings | None = None, spec: str | None = None, provider=None, prog
     except Exception:  # noqa: BLE001
         events = []
     prices = {sym: d.price for sym, d in data.items()}
+    st_now, st_4, st_24 = _strength_points(data, now if not s.offline else None)
     out = []
     for inst in targets:
         d = data.get(inst.symbol)
@@ -128,12 +151,15 @@ def scan(s: Settings | None = None, spec: str | None = None, provider=None, prog
             continue
         try:
             h1 = closed_bars(d.frames["H1"], now if not s.offline else d.quote_ts)
-            ff = ex.feature_frame(h1.iloc[-3000:], inst.is_metal, m.horizon)
+            sc = lambda st: st.pair_score(inst.base, inst.quote) if st is not None else 0.0  # noqa: E731
+            ff = ex.feature_frame(h1.iloc[-3000:], inst.is_metal, m.horizon, sc(st_now),
+                                  {"4": sc(st_4), "24": sc(st_24)})
         except Exception as e:  # noqa: BLE001
             errors[inst.symbol] = f"features: {e}"
             continue
         row = ff.iloc[-1]
-        feats = {k: float(row[k]) for k in ex.FEATURES + ex.DIR_FEATURES if np.isfinite(row[k])}
+        cols = dict.fromkeys(ex.FEATURES + ex.DIR_SIGNED + ex.DIR_CONTEXT)
+        feats = {k: float(row[k]) for k in cols if np.isfinite(row[k])}
         adr = float(row["adr"]) if np.isfinite(row["adr"]) else float("nan")
         if not np.isfinite(adr) or adr <= 0:
             continue
@@ -148,9 +174,11 @@ def scan(s: Settings | None = None, spec: str | None = None, provider=None, prog
                 evs.append(f"{e.ccy} {e.title} " + (f"em {mins:.0f} min" if mins >= 0 else f"há {-mins:.0f} min"))
         move = float(m.move_q.get("alert_median", m.theta)) * adr if p >= m.alert_p else \
             float(m.move_q.get("all_median", m.theta / 2)) * adr
+        pu = m.p_up(feats) if m.direction else None
         out.append(ExplosionAlert(
-            inst, p, m.level(p), p >= m.alert_p, m.p_up(feats) if m.direction else None, adr, move,
+            inst, p, m.level(p), p >= m.alert_p, pu, adr, move,
             d.bid, d.ask, d.quote_ts, d.tradeable, until, drivers(feats, m.horizon), evs,
-            bracket_plan(inst, m, d.bid, d.ask, adr, s, prices, until), feats))
+            bracket_plan(inst, m, d.bid, d.ask, adr, s, prices, until), feats,
+            dir_confident=pu is not None and m.direction_confident(pu), dir_useful=m.direction_useful))
     out.sort(key=lambda a: -a.p)
     return out, errors, now
