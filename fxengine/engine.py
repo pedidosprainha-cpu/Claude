@@ -144,7 +144,12 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
                         cands[dd] = ranker.score(rk_mod.candidate(dd, raw_d, raw_o, xr["z"], xr["dir_z"], macro))
                     else:
                         cands[dd] = (None, model.calibrated(raw_d, 0.0)[1])
-                best_d = max(cands, key=lambda k: cands[k][1])
+                allowed = list(cands)
+                if s.trend_filter and sigs:
+                    tr = np.sign(sigs[1].raw_feats.get("trend_h1", 0.0) + sigs[1].raw_feats.get("trend_h4", 0.0))
+                    if tr != 0:
+                        allowed = [int(tr)]           # only the side of the H1 + H4 trend (study rule B)
+                best_d = max(allowed, key=lambda k: cands[k][1])
                 if best_d != d:
                     d = best_d
                     sig = sigs[d]                       # same features, other side: no recomputation
@@ -288,8 +293,14 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
 
     # ------------------------------------------------------------------ narrative
     f_reasons, f_warns = fund.narrative(inst.symbol, d)
-    reasons = list(tech.reasons) + t_reasons
-    warnings = list(tech.warnings) + t_warns + fund.warnings + f_warns + plan.notes + quant.notes[1:]
+    tech_dir = int(np.sign(tech.score)) or d
+    if tech_dir == d:
+        reasons = list(tech.reasons) + t_reasons
+        warnings = list(tech.warnings) + t_warns
+    else:          # the models chose the side against the chart: the chart's arguments are warnings
+        reasons = list(t_reasons)
+        warnings = [f"gráfico contra: {r}" for r in tech.reasons] + list(t_warns)
+    warnings += fund.warnings + f_warns + plan.notes + quant.notes[1:]
     order = [c for c, _ in strength.ranking]
     if not inst.is_metal and inst.base in order and inst.quote in order:
         sb, sq = strength.scores[inst.base], strength.scores[inst.quote]
@@ -322,6 +333,8 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     opp = Opportunity(inst, d, px, data.bid, data.ask, data.quote_ts, data.quote_source, tech, quant, fund,
                       st_score, comps, float(composite), mult, score, grade(score), plan, ed, levels,
                       gates, reasons, warnings, data.notes)
+    opp.reasons = list(dict.fromkeys(opp.reasons))         # no repeated lines
+    opp.warnings = list(dict.fromkeys(opp.warnings))
     opp.executable = not gates and (sig.passes if sig is not None else score >= s.min_score)
     opp.day, opp.breakouts, opp.signal = day, bks, sig
     opp.explosion = xr if xr is not None else explosion_reading(data, now, exp_model, exp_strength)

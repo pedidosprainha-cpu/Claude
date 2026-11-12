@@ -112,7 +112,7 @@ class ScreensTest {
     @Test
     fun parsesAssetFixture() {
         val a = asset()
-        assertEquals("EURUSD", a.symbol)
+        assertEquals("GBPUSD", a.symbol)
         assertTrue(a.mtf.size == 5 && a.levels.isNotEmpty() && (a.chartH1?.size ?: 0) > 50)
     }
 

@@ -82,8 +82,8 @@ fun SectionCard(
 }
 
 @Composable
-fun SideChip(side: String, isBuy: Boolean, big: Boolean = false) {
-    val c = Fx.side(isBuy)
+fun SideChip(side: String, isBuy: Boolean, big: Boolean = false, muted: Boolean = false) {
+    val c = if (muted) Fx.Muted else Fx.side(isBuy)
     Box(
         Modifier
             .clip(RoundedCornerShape(50))
@@ -92,7 +92,7 @@ fun SideChip(side: String, isBuy: Boolean, big: Boolean = false) {
             .padding(horizontal = if (big) 14.dp else 10.dp, vertical = if (big) 6.dp else 3.dp),
     ) {
         Text(
-            (if (isBuy) "▲ " else "▼ ") + side,
+            if (muted) "NÃO OPERAR · ${side.lowercase()}" else (if (isBuy) "▲ " else "▼ ") + side,
             color = c, fontWeight = FontWeight.Bold, fontSize = if (big) 15.sp else 12.sp,
         )
     }
@@ -194,7 +194,7 @@ fun OpportunityDetail(o: Opportunity, referenceOnly: Boolean, showActions: Boole
                     Text(o.symbol, style = MaterialTheme.typography.headlineMedium, color = Fx.Text)
                     Text(o.name + " · " + o.regime, color = Fx.Muted, fontSize = 13.sp)
                     Spacer(Modifier.height(6.dp))
-                    SideChip(o.side, o.isBuy, big = true)
+                    SideChip(o.side, o.isBuy, big = true, muted = referenceOnly)
                 }
                 GradeBadge(o.grade, o.score, 62)
             }
@@ -306,7 +306,7 @@ fun OpportunityRow(rank: Int, o: Opportunity, onClick: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(o.symbol, color = Fx.Text, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     Spacer(Modifier.width(8.dp))
-                    SideChip(o.side, o.isBuy)
+                    SideChip(o.side, o.isBuy, muted = !o.executable)
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(

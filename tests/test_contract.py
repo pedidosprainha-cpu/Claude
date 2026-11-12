@@ -38,7 +38,8 @@ def kotlin_calls() -> dict[str, list[str]]:
 def python_value(expr: str, tmp: str, listener: Listener):
     table = {"cacheDir()": tmp, "settings.balance": 10_000.0, "settings.riskPct": 1.0, "settings.assets": "all",
              "TZ": "America/Sao_Paulo", "settings.useEdge": True, "settings.useNews": True,
-             "settings.breakoutPlan": "mercado", "symbol": "EURUSD", "false": True}   # offline in tests
+             "settings.breakoutPlan": "mercado", "symbol": "EURUSD", "false": True,   # offline in tests
+             "settings.trendFilter": True}
     if expr.startswith("LambdaProgressListener"):
         return listener
     assert expr in table, f"argumento Kotlin sem mapeamento no teste: {expr}"

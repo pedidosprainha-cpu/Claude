@@ -197,7 +197,7 @@ def result_dict(r: ScanResult, tz_name: str = "America/Sao_Paulo", elapsed: floa
 
 def run(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets: str = "all",
         use_edge: bool = True, use_news: bool = True, tz_name: str = "America/Sao_Paulo",
-        listener=None, offline: bool = False) -> str:
+        listener=None, offline: bool = False, trend_filter: bool = True) -> str:
     """Run a scan; `listener.onProgress(int, str)` receives progress (Java object or Python)."""
     def progress(pct: float, msg: str) -> None:
         if listener is not None:
@@ -206,7 +206,8 @@ def run(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets
     t0 = time.time()
     try:
         s = Settings(balance=float(balance), risk_pct=float(risk_pct), cache_dir=cache_dir,
-                     use_edge=bool(use_edge), use_news=bool(use_news), workers=6, offline=bool(offline))
+                     use_edge=bool(use_edge), use_news=bool(use_news), workers=6, offline=bool(offline),
+                     trend_filter=bool(trend_filter))
         progress(1, "Iniciando o motor")
         res = Engine(s).scan(None if assets in (None, "", "all") else assets, progress=progress)
         if not res.opportunities:
@@ -515,7 +516,8 @@ def asset_result_dict(r, tz_name: str = "America/Sao_Paulo", elapsed: float = 0.
 
 def analyze_asset(cache_dir: str, symbol: str, balance: float = 10_000.0, risk_pct: float = 1.0,
                   plan: str = "mercado", tz_name: str = "America/Sao_Paulo", listener=None,
-                  offline: bool = False, use_edge: bool = True, use_news: bool = True) -> str:
+                  offline: bool = False, use_edge: bool = True, use_news: bool = True,
+                  trend_filter: bool = True) -> str:
     """Deep analysis of one currency pair or metal. Returns JSON."""
     def progress(pct: float, msg: str) -> None:
         if listener is not None:
@@ -525,7 +527,7 @@ def analyze_asset(cache_dir: str, symbol: str, balance: float = 10_000.0, risk_p
     try:
         s = Settings(balance=float(balance), risk_pct=float(risk_pct), cache_dir=cache_dir, workers=6,
                      offline=bool(offline), use_edge=bool(use_edge), use_news=bool(use_news),
-                     breakout_plan=plan if plan in bk.MODEL_PATHS else "mercado")
+                     breakout_plan=plan if plan in bk.MODEL_PATHS else "mercado", trend_filter=bool(trend_filter))
         progress(1, "Iniciando o motor")
         res = Engine(s).scan_asset(symbol, progress=progress)
         out = asset_result_dict(res, tz_name, time.time() - t0)

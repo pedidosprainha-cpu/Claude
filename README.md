@@ -204,6 +204,24 @@ andar ≥ 0,5× a amplitude diária média (ADR), para qualquer lado, em até 4 
 - Com o monitor de rompimentos ligado, o app avisa a cada hora cheia quando um ativo entra em
   alerta alto ou extremo (ajuste "Alertas de explosão").
 
+### Filtro de tendência e taxa de perdas
+
+`research/trend_filter_study.py` (regra pré-registrada: adotar se reduzir a taxa de trades
+perdedores em ≥ 4 de 5 períodos sem piorar o R médio em mais de 0,005R):
+
+| 1º colocado de cada hora | trades perdedores (5 períodos) | R médio |
+|---|---|---|
+| qualquer lado (expectativa) | 48%–56% | −0,021R |
+| só a favor de H1 + H4 | 49%–57% | −0,022R |
+| só a favor de H1, H4 e D1 | 52%–57% | −0,058R |
+
+Seguir a tendência **não reduz** a taxa de perdas: em qualquer filtro honesto cerca de metade
+das entradas a mercado perde; o que limita o prejuízo é o stop e o tamanho do lote. Mesmo
+assim o ajuste "Só a favor da tendência (H1 + H4)" vem ligado por padrão (preferência do
+usuário, neutro no histórico): ele impede entradas contra a tendência, como comprar com todos
+os timeframes em queda. Quando nada passa nos filtros, o ranking mostra "NÃO OPERAR" em
+todos os ativos e um aviso de que a lista é só observação.
+
 ### Desempenho e verificação
 
 Medido com as mesmas versões de numpy/pandas do APK (resultados idênticos antes e depois,

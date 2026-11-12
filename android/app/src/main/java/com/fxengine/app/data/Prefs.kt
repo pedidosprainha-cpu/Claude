@@ -15,6 +15,7 @@ data class AppSettings(
     val homeMode: String = "all",         // all = scan every instrument | asset = one instrument
     val focusSymbol: String = "EURUSD",   // instrument for the single-asset analysis
     val explosionAlerts: Boolean = true,  // monitor: notify high-probability price explosions (hourly)
+    val trendFilter: Boolean = true,      // market entries only on the side of the H1 + H4 trend
 )
 
 class Prefs(context: Context) {
@@ -33,6 +34,7 @@ class Prefs(context: Context) {
         homeMode = sp.getString("home_mode", "all") ?: "all",
         focusSymbol = sp.getString("focus_symbol", "EURUSD") ?: "EURUSD",
         explosionAlerts = sp.getBoolean("explosion_alerts", true),
+        trendFilter = sp.getBoolean("trend_filter", true),
     )
 
     fun save(s: AppSettings) {
@@ -48,6 +50,7 @@ class Prefs(context: Context) {
             .putString("home_mode", s.homeMode)
             .putString("focus_symbol", s.focusSymbol)
             .putBoolean("explosion_alerts", s.explosionAlerts)
+            .putBoolean("trend_filter", s.trendFilter)
             .apply()
     }
 

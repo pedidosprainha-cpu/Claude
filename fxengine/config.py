@@ -49,6 +49,7 @@ class Settings:
 
     # --- data -------------------------------------------------------------------
     use_news: bool = True
+    trend_filter: bool = True    # market entries only on the side of the H1 + H4 trend (user preference)
     use_cot: bool = True
     offline: bool = False              # synthetic data (demo / tests)
     seed: int = 7

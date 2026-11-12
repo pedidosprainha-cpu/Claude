@@ -83,6 +83,17 @@ fun RankingScreen(result: ScanResult?, onOpenAsset: (String) -> Unit = {}) {
                 "Melhor entrada a mercado primeiro (expectativa validada) · ${result.ranking.size} ativos · " +
                     "${result.weekday} ${result.timestamp}",
             )
+            if (result.ranking.none { it.executable }) {
+                SectionCard(accent = Fx.Warn) {
+                    Text("Nenhuma entrada a mercado agora", color = Fx.Warn, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Nenhum ativo passou em todos os filtros. A lista abaixo é só observação, não é " +
+                            "recomendação: o 1º colocado também está marcado NÃO OPERAR.",
+                        color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !onlyExec, onClick = { onlyExec = false }, label = { Text("Todos") })
                 FilterChip(
@@ -300,6 +311,13 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit) {
                 "Inclui o sentimento das manchetes recentes na análise fundamental.",
                 settings.useNews,
             ) { onChange(settings.copy(useNews = it)) }
+            ToggleRow(
+                "Só a favor da tendência (H1 + H4)",
+                "A análise só considera o lado da tendência de H1 e H4: evita comprar em queda ou vender em " +
+                    "alta. No histórico isso não reduziu a taxa de perdas (cerca de metade das entradas a mercado " +
+                    "perde em qualquer filtro), mas também não piorou o resultado médio.",
+                settings.trendFilter,
+            ) { onChange(settings.copy(trendFilter = it)) }
             ToggleRow(
                 "Alertas de explosão",
                 "Com o monitor de rompimentos ligado, mede a chance de explosão a cada hora cheia e avisa quando " +

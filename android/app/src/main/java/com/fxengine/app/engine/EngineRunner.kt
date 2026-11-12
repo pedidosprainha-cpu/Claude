@@ -53,6 +53,8 @@ class EngineRunner(context: Context) {
             settings.useNews,
             TZ,
             LambdaProgressListener(onProgress),
+            false,
+            settings.trendFilter,
         ).toString()
 
     /** Light real-time breakout scan (fxengine/breakouts.py). */
@@ -96,6 +98,7 @@ class EngineRunner(context: Context) {
             false,
             settings.useEdge,
             settings.useNews,
+            settings.trendFilter,
         ).toString()
 
     companion object {
