@@ -1,0 +1,5 @@
+# Substitua pelo seu domínio apontado para este servidor.
+fxintel.example.com {
+    encode gzip
+    reverse_proxy fxintel:8000
+}

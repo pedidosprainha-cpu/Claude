@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FXIntel — Painel</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">◆</span> FXIntel <small>Forex &amp; Metais</small></div>
+  <div class="status" id="status">
+    <span class="pill" id="st-ws">● WS</span>
+    <span class="pill" id="st-market">mercado</span>
+    <span class="pill" id="st-data">dados</span>
+    <span class="pill" id="st-model">modelo</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="painel" class="on">Painel</button>
+  <button data-tab="historico">Histórico</button>
+  <button data-tab="alertas">Alertas <span id="alert-badge" class="badge hidden">0</span></button>
+  <button data-tab="modelo">Modelo &amp; Backtest</button>
+  <button data-tab="config">Configurações</button>
+  <button data-tab="sistema">Sistema</button>
+</nav>
+
+<main>
+<section id="tab-painel" class="tab on">
+  <div class="analyze-wrap">
+    <button id="btn-analyze" class="analyze">ANALISAR MERCADO AGORA</button>
+    <div id="analyze-msg" class="muted"></div>
+  </div>
+
+  <div id="result" class="card hidden"></div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-h"><h3 id="chart-title">Gráfico</h3>
+        <div class="seg" id="tf-seg"><button data-tf="M15">M15</button><button data-tf="H1" class="on">H1</button><button data-tf="H4">H4</button><button data-tf="D1">D1</button></div>
+      </div>
+      <div id="chart" class="chart"></div>
+      <div id="chart-legend" class="legend"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Cotações spot</h3><span class="muted" id="quotes-at"></span></div>
+      <div class="table-wrap"><table id="quotes"><thead><tr><th>Ativo</th><th>Bid</th><th>Ask</th><th>Spread</th><th>Var. dia</th><th>Idade</th><th>Fonte</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><h3>Visão do mercado (última análise)</h3></div>
+    <div class="table-wrap"><table id="market"><thead><tr><th>Ativo</th><th>D1</th><th>H4</th><th>H1</th><th>M15</th><th>Alinh.</th><th>Regime</th><th>Fund.</th><th>Evento</th><th>Cand.</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><div class="card-h"><h3>Força relativa das moedas (5 dias)</h3></div><div id="strength"></div></div>
+    <div class="card"><div class="card-h"><h3>Próximos eventos relevantes</h3></div><div id="events"></div></div>
+  </div>
+</section>
+
+<section id="tab-historico" class="tab">
+  <div class="card"><div class="card-h"><h3>Sinais emitidos (acompanhamento forward)</h3><span id="sig-stats" class="muted"></span></div>
+    <div class="table-wrap"><table id="signals"><thead><tr><th>Data (UTC)</th><th>Ativo</th><th>Direção</th><th>Entrada</th><th>SL</th><th>TP1</th><th>TP2</th><th>Status</th><th>R</th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><div class="card-h"><h3>Análises</h3></div>
+    <div class="table-wrap"><table id="analyses"><thead><tr><th>Data (UTC)</th><th>Status</th><th>Ativo</th><th>Direção</th><th>Score</th><th>Tempo</th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><div class="card-h"><h3>Conta demonstrativa (paper trading)</h3></div>
+    <div class="table-wrap"><table id="paper"><thead><tr><th>Abertura</th><th>Ativo</th><th>Dir.</th><th>Entrada</th><th>SL</th><th>TP1</th><th>Status</th><th>R</th></tr></thead><tbody></tbody></table></div></div>
+</section>
+
+<section id="tab-alertas" class="tab">
+  <div class="card"><div class="card-h"><h3>Alertas</h3><button id="btn-notify" class="ghost">Ativar notificações do navegador</button></div><div id="alerts"></div></div>
+</section>
+
+<section id="tab-modelo" class="tab">
+  <div class="card" id="model-card"></div>
+  <div class="card" id="report-card"></div>
+</section>
+
+<section id="tab-config" class="tab">
+  <div class="card"><div class="card-h"><h3>Instrumentos monitorados</h3></div><div id="cfg-universe" class="chips"></div></div>
+  <div class="card"><div class="card-h"><h3>Risco e conta</h3></div><div id="cfg-risk" class="form"></div></div>
+  <div class="card"><div class="card-h"><h3>Portões de qualidade</h3></div><div id="cfg-gates" class="form"></div></div>
+  <div class="actions"><button id="btn-save" class="primary">Salvar configurações</button><span id="cfg-msg" class="muted"></span></div>
+  <div class="card"><div class="card-h"><h3>Acesso</h3></div>
+    <p class="muted">Chave de API armazenada apenas neste navegador.</p>
+    <button id="btn-key" class="ghost">Trocar chave de API</button></div>
+</section>
+
+<section id="tab-sistema" class="tab">
+  <div class="card" id="health-card"></div>
+  <div class="card"><div class="card-h"><h3>Registro de eventos do motor</h3></div><div class="table-wrap"><table id="events-log"><thead><tr><th>Data</th><th>Tipo</th><th>Mensagem</th></tr></thead><tbody></tbody></table></div></div>
+</section>
+</main>
+
+<div id="key-modal" class="modal hidden">
+  <div class="modal-box">
+    <h3>Chave de API</h3>
+    <p class="muted">Informe a chave gerada pelo servidor (arquivo <code>var/admin_api_key.txt</code>).</p>
+    <input id="key-input" type="password" placeholder="fxi_..." autocomplete="off">
+    <button id="key-save" class="primary">Entrar</button>
+  </div>
+</div>
+<footer class="foot">Análise automatizada para apoio à decisão. Não constitui recomendação de investimento. Sinal ≠ ordem executada.</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

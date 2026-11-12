@@ -1,0 +1,1 @@
+[{"id":1,"ts":"2026-11-12T20:59:01.654330+00:00","kind":"dados","severity":"warning","symbol":null,"message":"Cotações atrasadas: AUDUSD, NZDUSD","data":{"symbols":["AUDUSD","NZDUSD"]},"dedup":"stale:20261112205"}]

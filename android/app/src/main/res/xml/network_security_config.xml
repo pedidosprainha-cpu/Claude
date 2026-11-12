@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HTTPS é recomendado. HTTP em texto claro é permitido para permitir o uso com um servidor
+     na rede local (ex.: http://192.168.0.10:8000). Em produção, publique o backend atrás de HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

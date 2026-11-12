@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+var/
+analysis/data/
+analysis/results.json
+config/settings.json
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.jks
+android/keystore.properties
+*.iml
+.idea/
+.venv/

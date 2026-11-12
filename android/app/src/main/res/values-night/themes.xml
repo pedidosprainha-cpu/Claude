@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.FXIntel" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#1A1A19</item>
+    </style>
+</resources>

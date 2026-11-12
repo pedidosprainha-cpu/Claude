@@ -1,0 +1,14 @@
+# systemd: cp deploy/fxintel.service /etc/systemd/system/ && systemctl enable --now fxintel
+[Unit]
+Description=FXIntel backend
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/fxintel
+ExecStart=/opt/fxintel/.venv/bin/python -m fxintel serve --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+Environment=FXI_DATA_DIR=/var/lib/fxintel
+
+[Install]
+WantedBy=multi-user.target
