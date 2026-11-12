@@ -1,0 +1,7 @@
+{
+  "name": "voce-esta-parado",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ciência #7 - Você acha que está parado? (imagens NASA)",
+  "dependencies": { "@napi-rs/canvas": "0.1.65" }
+}

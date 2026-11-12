@@ -1,0 +1,19 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+10%",
+  "tom": "-3Hz",
+  "falas": [
+    {"id": "hook",     "texto": "Você acha que está parado agora?", "velocidade": "+4%", "tom": "-4Hz"},
+    {"id": "hook2",    "texto": "Na verdade, você está viajando a mais de um milhão de quilômetros por hora.", "velocidade": "+8%"},
+    {"id": "rotacao",  "texto": "Primeiro, a Terra gira. Na linha do Equador, isso te leva a mil seiscentos e setenta quilômetros por hora.", "velocidade": "+12%"},
+    {"id": "orbita",   "texto": "Ao mesmo tempo, ela corre em volta do Sol a cento e sete mil quilômetros por hora. São trinta quilômetros a cada segundo.", "velocidade": "+12%"},
+    {"id": "galaxia",  "texto": "E o Sol arrasta tudo isso em volta do centro da galáxia, a mais de oitocentos mil quilômetros por hora.", "velocidade": "+11%"},
+    {"id": "ano",      "texto": "Uma volta leva duzentos e trinta milhões de anos. Na última vez que a gente passou por aqui, os dinossauros estavam surgindo.", "velocidade": "+10%"},
+    {"id": "universo", "texto": "E, em relação à luz mais antiga do universo, o Sistema Solar voa a um vírgula três milhão de quilômetros por hora.", "velocidade": "+9%", "tom": "-4Hz"},
+    {"id": "sente",    "texto": "Então por que você não sente nada? Porque o corpo não sente velocidade. Só sente quando ela muda.", "velocidade": "+8%"},
+    {"id": "iss",      "texto": "Na Estação Espacial, os astronautas voam a vinte e oito mil quilômetros por hora... e não sentem essa velocidade.", "velocidade": "+8%"},
+    {"id": "odometro", "texto": "Desde que este vídeo começou, você já percorreu mais de vinte mil quilômetros. Metade da volta ao mundo.", "velocidade": "+10%"},
+    {"id": "fecho",    "texto": "Você nunca esteve duas vezes no mesmo lugar do universo.", "velocidade": "+2%", "tom": "-5Hz"},
+    {"id": "cta",      "texto": "Segue pra mais curiosidades aleatórias.", "velocidade": "+10%"}
+  ]
+}
