@@ -87,6 +87,11 @@ def main():
             "features": {str(int(t.timestamp())): enc(X.loc[t].to_numpy()) for t in X.index} if X is not None else {},
             "feature_names": list(X.columns) if X is not None else [],
             "p": [float(v) for v in p],
+            "plans": [{"dir": d, "price": px, **{k: float(v) for k, v in C.plan(F, d, px).iloc[0][
+                ["sl", "tp1", "tp2", "rr1", "room_r", "risk_atr", "in_zone", "at_ema", "pd_sweep", "d1_dir",
+                 "tp1_structural"]].items()}}
+                for d in (1, -1) for px in (None, float(F["c"].iloc[-1]) * 1.0015, float(F["c"].iloc[-1]) * 0.9985)
+                if not C.plan(F, d, px).empty],
             "macro_tail": {c: enc(mf[c].iloc[-400:]) for c in mf.columns},
             "strength_tail": {c: enc(sd[c].iloc[-400:]) for c in sd.columns},
         }

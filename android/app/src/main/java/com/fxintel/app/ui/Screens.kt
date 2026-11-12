@@ -110,19 +110,9 @@ fun DashboardScreen(vm: MainViewModel, s: UiState, pad: PaddingValues) {
                     }
                 }
             }
-            if (a.observations.isNotEmpty()) item {
-                SectionCard("Observações (não recomendadas)") {
-                    a.observations.forEach { c ->
-                        var open by remember(c.instrument, c.setup, a.id) { mutableStateOf(false) }
-                        Column(Modifier.fillMaxWidth().clickable { open = !open; if (open) vm.select(c) }.padding(vertical = 6.dp)) {
-                            Text("${c.direction} ${c.instrument} · ${c.setup_name}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text("score ${f(c.score, 0)} · EV ${f(c.expected_value_r, 3)}R · bloqueado por: " +
-                                c.gates.filter { !it.passed }.joinToString { it.gate }, fontSize = 12.sp, color = fx.muted)
-                            if (open) SignalDetails(c, false)
-                        }
-                        HorizontalDivider(color = fx.grid)
-                    }
-                }
+            item {
+                RankingCard(a.ranking, a.id, onSelect = { vm.select(it) },
+                    onPaper = if (s.localMode) null else { id -> vm.paperExecute(id) })
             }
         }
         item {

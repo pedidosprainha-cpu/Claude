@@ -93,9 +93,10 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
         val bestOrig = all.firstOrNull { it.gates.all { g -> g.passed } }
         val best = bestOrig?.copy(id = UUID.randomUUID().toString().take(16),
             execution_note = "Este é um SINAL analítico. A execução depende da sua corretora e da confirmação das condições reais de negociação.")
-        val reasons = if (best != null) emptyList() else if (all.isEmpty())
+        val real = all.filter { it.has_setup }
+        val reasons = if (best != null) emptyList() else if (real.isEmpty())
             listOf("Nenhum setup técnico ativo nos últimos candles H1 fechados do universo monitorado.")
-        else all.flatMap { c -> c.gates.filter { !it.passed }.map { it.gate } }.groupingBy { it }.eachCount()
+        else real.flatMap { c -> c.gates.filter { !it.passed }.map { it.gate } }.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.map { "${it.key}: bloqueou ${it.value} candidato(s)" }
         val str5 = strength?.byWindow?.get(120)?.mapValues { it.value.lastOk() }?.filterValues { !it.isNaN() }
             ?.entries?.sortedByDescending { it.value }?.associate { it.key to Math.round(it.value * 1000) / 1000.0 } ?: emptyMap()
@@ -106,7 +107,8 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
             status = if (best != null) "SINAL" else "SEM_OPORTUNIDADE",
             headline = best?.let { "${it.direction} ${it.instrument} a mercado — score ${"%.0f".format(it.score)}" }
                 ?: "Nenhuma oportunidade suficientemente qualificada no momento",
-            signal = best, no_signal_reasons = reasons, observations = all.filter { it !== bestOrig }.take(5),
+            signal = best, no_signal_reasons = reasons, observations = all.filter { it !== bestOrig && it.has_setup }.take(5),
+            ranking = ranking(all, bestOrig, best, mids, st),
             market = universe.map { per[it]!!.market }, model = modelStatus(),
             fundamentals = Fundamentals(str5, evs.filter { it.time in now..(now + 36 * 3600) && it.impact in setOf("High", "Medium") }.take(15)
                 .map { EconEvent(it.title, it.currency, iso(it.time), it.impact) }, events.isSuccess, cb.asOf),
@@ -153,18 +155,22 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
         val out = Inst(sym, market, mutableListOf(), atr, mutableListOf())
         if (q == null) return out
         val ctx = Ctx(inst, F, sums, align, regime, anom, dq, fb, ev, q, now, st)
-        for (c in Candidates.generate(F, lastN = 2)) {
-            val x = Features.build(inst, F, c, mf, sd)
-            out.cands.add(candidate(ctx, c, x))
+        val real = Candidates.generate(F, lastN = 2)
+        for (c in real) out.cands.add(candidate(ctx, c, Features.build(inst, F, c, mf, sd)))
+        // ranking: plano estrutural nas direções sem gatilho ativo (nunca vira sinal)
+        for (d in intArrayOf(1, -1)) {
+            if (real.any { it.dir == d }) continue
+            Candidates.plan(F, d, q.mid)?.let { out.cands.add(candidate(ctx, it, null)) }
         }
-        return Inst(sym, market.copy(candidates = out.cands.size), out.cands, atr, out.raw)
+        return Inst(sym, market.copy(candidates = real.size), out.cands, atr, out.raw)
     }
 
     private class Ctx(val inst: Instruments.Inst, val F: Frame, val sums: Map<String, Technical.TfSummary>, val align: Double,
                       val regime: Regime, val anom: List<String>, val dq: List<String>, val fb: FundBias, val ev: EventRisk,
                       val q: Q, val now: Long, val st: EngineSettings)
 
-    private fun candidate(x: Ctx, c: Candidates.Cand, feats: Map<String, Double>): Candidate {
+    private fun candidate(x: Ctx, c: Candidates.Cand, feats: Map<String, Double>?): Candidate {
+        val plan = c.setup == Candidates.PLAN
         val inst = x.inst; val st = x.st; val q = x.q; val d = c.dir
         val atr = c.atr
         val entry = if (d == 1) q.ask else q.bid
@@ -175,14 +181,19 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
         val costR = if (risk > 0) (q.spread / 2 + slip) / risk else Double.POSITIVE_INFINITY
         val rrNet = if (risk > 0) d * (c.tp1 - entry) / (risk + slip) else NAN
         val drift = d * (entry - c.entryRef) / atr
-        val p = model?.predict(feats)
-        val cal = p?.let { model!!.calibrated(it) }
-        val pUse = if (cal != null && cal.n >= 30) cal.observed else p
+        val p = if (plan || feats == null) null else model?.predict(feats)
+        // sem setup ativo o modelo não se aplica: taxa-base histórica com IC de Wilson
+        val cal = if (plan) model?.let { m ->
+            val (lo, hi) = Risk.wilson(Math.round(m.meta.baseRate * m.meta.nTrain).toInt(), m.meta.nTrain)
+            LogisticModel.CalBin(0.0, 1.0, m.meta.nTrain, m.meta.baseRate, m.meta.baseRate, lo, hi)
+        } else p?.let { model!!.calibrated(it) }
+        val pUse = if (plan) cal?.observed else if (cal != null && cal.n >= 30) cal.observed else p
         val ev = if (model != null && pUse != null && !rr1.isNaN()) model.expectedR(pUse, rr1) else null
         val evLo = if (model != null && cal != null && !rr1.isNaN()) model.expectedR(cal.ciLo, rr1) else null
 
         val gates = ArrayList<Gate>()
         fun gate(n: String, ok: Boolean, det: String) = gates.add(Gate(n, ok, det))
+        if (plan) gate("setup_ativo", false, "Sem gatilho técnico nos últimos candles H1 fechados — aguardar a formação de um setup")
         val open = Time.marketOpen(x.now, inst.kind)
         gate("mercado_aberto", open, if (open) "Mercado aberto" else "Mercado fechado/pausa de negociação")
         val age = q.ageS(x.now.toDouble())
@@ -210,7 +221,7 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
         val tech = (0.4 * x.align * d + 0.15 * c.inZone + 0.1 * c.tp1Structural + 0.15 * min(c.roomR, 3.0) / 3 +
             0.1 * (if (c.triggerEngulf == 1 || c.triggerPin == 1) 1 else 0) + 0.1 * (if (c.nSetups > 1) 1 else 0)).coerceIn(-1.0, 1.0)
         val fund = x.fb.score * d
-        val trendSetups = c.setup in setOf("PULLBACK", "TREND", "BREAKOUT")
+        val trendSetups = c.setup in setOf("PULLBACK", "TREND", "BREAKOUT", Candidates.PLAN)
         val regimeFit = (if ((trendSetups && x.regime.trend == "tendência") || (!trendSetups && x.regime.trend != "tendência")) 0.6 else -0.3) -
             (if (x.regime.volShock || x.regime.volatility == "extrema") 0.6 else 0.0)
         val costC = 1 - 2 * min(costR / max(st.maxCostR, 1e-9), 1.0)
@@ -232,6 +243,7 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
                 if (model.meta.bss >= 0.02 && model.meta.auc >= 0.58 && width <= 0.12) level = "alta"
             }
         }
+        if (plan) { level = "baixa"; limits.add(0, "Sem setup ativo: probabilidade = taxa-base histórica de todos os setups (o modelo só avalia setups formados)") }
         limits.add("Probabilidades históricas não garantem resultados futuros; custos reais podem diferir")
         val dirTxt = if (d == 1) "BUY" else "SELL"
         val tech1 = ArrayList<String>()
@@ -245,7 +257,7 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
         tech1.add("Espaço livre até o obstáculo oposto: ${"%.1f".format(c.roomR)}R; alinhamento MTF ${"%+.2f".format(x.align * d)}")
         val fundL = x.fb.components.map { "${it.text} → contribuição ${"%+.3f".format(it.contribution * d)}" }.ifEmpty { listOf("Sem componentes fundamentalistas disponíveis") }
         val quant = listOf("Regime: ${x.regime.label}", "Percentil de volatilidade (ATR): ${r(x.regime.atrPct, 3)}") +
-            (model?.contributions(feats)?.take(5)?.map { "Modelo: ${it.first} contribui ${"%+.3f".format(it.second)} ao log-odds" } ?: emptyList())
+            (feats?.let { f -> model?.contributions(f) }?.take(5)?.map { "Modelo: ${it.first} contribui ${"%+.3f".format(it.second)} ao log-odds" } ?: emptyList())
         val opp = x.F.at(if (d == 1) "near_lo" else "near_hi", c.i)
         val nxt = x.ev.next
         return Candidate(
@@ -253,13 +265,14 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
             execution_type = "Entrada imediata a mercado (Market Execution)",
             reference_quote = RefQuote(q.bid, q.ask, q.mid, r(q.spread / inst.pip, 2), q.spreadSource, iso(q.time.toLong()), q.source, r(age, 1)),
             entry = Level(inst.roundPrice(entry), side = if (d == 1) "ASK" else "BID"),
-            stop_loss = Level(inst.roundPrice(c.sl), r(abs(entry - c.sl) / inst.pip, 1), "Além do extremo estrutural do setup + buffer de 0,25 ATR (mín. 1 ATR)"),
+            stop_loss = Level(inst.roundPrice(c.sl), r(abs(entry - c.sl) / inst.pip, 1), if (plan) "Além do último swing protegido + 0,25 ATR (entre 1 e 2,5 ATR do preço atual)" else "Além do extremo estrutural do setup + buffer de 0,25 ATR (mín. 1 ATR)"),
             take_profit = listOf(
                 TakeProfit("TP1 (50%)", inst.roundPrice(c.tp1), r(abs(c.tp1 - entry) / inst.pip, 1), r(rr1, 2), if (c.tp1Structural == 1) "Pool de liquidez oposto" else "Alvo padrão 1,5R"),
                 TakeProfit("TP2 (restante, stop no preço de entrada)", inst.roundPrice(c.tp2), r(abs(c.tp2 - entry) / inst.pip, 1), r(rr2, 2))),
             risk_reward = RiskReward(r(rr1, 2), r(rr2, 2), r(rrNet, 2), r(costR, 3)),
             probability = Probability(p?.let { r(it, 3) }, cal?.let { r(it.observed, 3) }, cal?.let { listOf(r(it.ciLo, 3), r(it.ciHi, 3)) },
-                cal?.n, "TP1 atingido antes do Stop Loss", "Regressão logística (walk-forward) → frequência observada fora da amostra na faixa"),
+                cal?.n, "TP1 atingido antes do Stop Loss",
+                if (plan) "Taxa-base histórica (sem setup ativo; IC de Wilson)" else "Regressão logística (walk-forward) → frequência observada fora da amostra na faixa"),
             expected_value_r = ev?.let { r(it, 3) }, expected_value_r_ci_low = evLo?.let { r(it, 3) },
             confidence = Confidence(level, limits), score = Math.round(score * 10) / 10.0,
             justification = Justification(tech1, fundL, quant),
@@ -276,8 +289,33 @@ class Engine(private val md: MarketData, private val model: LogisticModel?, priv
                     if (x.align * d < 0) "Timeframes superiores desalinhados" else null,
                     if (x.regime.volatility in setOf("alta", "extrema")) "Regime ${x.regime.label}" else null,
                     if (q.spreadSource == "estimated") "Spread estimado (fonte sem bid/ask)" else null)),
-            gates = gates,
+            gates = gates, has_setup = !plan,
         )
+    }
+
+    /** Top-5 por nota: uma oportunidade por instrumento (direção de maior nota), com status explícito. */
+    private fun ranking(all: List<Candidate>, bestOrig: Candidate?, best: Candidate?, mids: Map<String, Double>,
+                        st: EngineSettings, k: Int = 5): List<Candidate> {
+        val byInst = LinkedHashMap<String, Candidate>()
+        for (c in all) {
+            val cur = byInst[c.instrument]
+            if (cur == null || c === bestOrig || (cur !== bestOrig && c.score > cur.score)) byInst[c.instrument] = c
+        }
+        return byInst.values.sortedByDescending { it.score }.take(k).mapIndexed { i, c0 ->
+            val c = if (c0 === bestOrig && best != null) best else c0
+            val failed = c.gates.filter { !it.passed }.map { it.gate }
+            val (stt, txt) = when {
+                c0 === bestOrig -> "SINAL" to "Sinal emitido: todos os portões aprovados"
+                c.gates.all { it.passed } -> "ELEGIVEL" to "Aprovada em todos os portões (apenas um sinal é emitido por análise)"
+                !c.has_setup -> "AGUARDANDO_GATILHO" to "Sem setup ativo: acompanhar e aguardar o gatilho técnico"
+                else -> "OBSERVACAO" to "Não recomendada: bloqueada por ${failed.joinToString(", ")}"
+            }
+            val risk = c.risk ?: run {  // dimensionamento informativo
+                val sz = Risk.size(Instruments.get(c.instrument), c.entry.price, c.stop_loss.price, st.equity, st.riskPct, st.account, mids, st.leverage)
+                RiskEval(false, emptyList(), Sizing(sz.ok, sz.lots, sz.riskAmount, sz.riskPct, st.account, sz.margin, sz.reason))
+            }
+            c.copy(rank = i + 1, status = stt, status_text = txt, blocked_by = failed, risk = risk)
+        }
     }
 
     private fun riskCheck(sym: String, d: Int, entry: Double, stop: Double, mids: Map<String, Double>, st: EngineSettings, rs: RiskState): RiskEval {

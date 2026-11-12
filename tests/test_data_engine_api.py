@@ -129,6 +129,16 @@ def test_engine_end_to_end_offline(engine):
                   "confidence", "justification", "invalidation", "validity"):
             assert k in c
     assert engine.storage.latest_analysis()["id"] == r["id"]
+    # ranking: até 5 itens, um por instrumento, ordenados pela nota, com status explícito
+    rk = r["ranking"]
+    assert 1 <= len(rk) <= 5 and [c["rank"] for c in rk] == list(range(1, len(rk) + 1))
+    assert all(a["score"] >= b["score"] for a, b in zip(rk, rk[1:]))
+    assert len({c["instrument"] for c in rk}) == len(rk)
+    assert all(c["status"] in ("SINAL", "ELEGIVEL", "OBSERVACAO", "AGUARDANDO_GATILHO") for c in rk)
+    for c in rk:
+        if not c["has_setup"]:  # plano sem gatilho nunca é recomendado
+            assert c["status"] == "AGUARDANDO_GATILHO" and "setup_ativo" in c["blocked_by"]
+            assert c["probability"]["model_p"] is None
 
 
 def test_api_auth_and_endpoints(engine):

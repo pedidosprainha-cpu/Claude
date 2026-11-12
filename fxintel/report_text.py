@@ -48,13 +48,22 @@ def render_text(res: dict) -> str:
         a("")
         for r in res.get("no_signal_reasons", []):
             a(f"  • {r}")
-    obs = res.get("observations") or []
-    if obs:
-        a("\nObservações (NÃO recomendadas — não passaram em todos os portões):")
-        for c in obs[:5]:
-            failed = [g["gate"] for g in c["gates"] if not g["passed"]]
-            a(f"  - {c['direction']} {c['instrument']} [{c['setup']}] score {c['score']} EV {c['expected_value_r']}R "
-              f"p_cal {c['probability']['calibrated_p']} | bloqueado por: {', '.join(failed)}")
+    rk = res.get("ranking") or []
+    if rk:
+        lbl = {"SINAL": "SINAL", "ELEGIVEL": "ELEGÍVEL", "OBSERVACAO": "OBSERVAÇÃO",
+               "AGUARDANDO_GATILHO": "AGUARDANDO GATILHO"}
+        nan = float("nan")
+        a("\nRANKING — 5 melhores oportunidades (nota 0–100):")
+        a(f"  {'#':>2} {'Ativo':7} {'Dir':4} {'Nota':>5}  {'Status':19} {'EV':>7} {'Prob':>6} {'R:R':>5}  Entrada / SL / TP1")
+        for c in rk:
+            p = c["probability"].get("calibrated_p")
+            ev = c["expected_value_r"] if c["expected_value_r"] is not None else nan
+            rr = c["risk_reward"]["rr_tp1"] if c["risk_reward"]["rr_tp1"] is not None else nan
+            a(f"  {c['rank']:>2} {c['instrument']:7} {c['direction']:4} {c['score']:>5.1f}  "
+              f"{lbl.get(c['status'], '-'):19} {ev:>+6.2f}R {(p * 100 if p is not None else nan):>5.1f}% {rr:>5.2f}  "
+              f"{c['entry']['price']} / {c['stop_loss']['price']} / {c['take_profit'][0]['price']}")
+            if c["status"] != "SINAL":
+                a(f"      bloqueios: {', '.join(c.get('blocked_by', []))}")
     m = res.get("model", {})
     a(f"\nModelo: {'validado' if m.get('validated') else 'NÃO validado'} | "
       f"OOS {m.get('oos_metrics', {}) and {k: round(v, 4) for k, v in m['oos_metrics'].items() if k in ('bss', 'auc', 'n')}}")

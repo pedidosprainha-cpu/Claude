@@ -106,7 +106,21 @@ class GoldenEngineTest {
             }
             if (badF > 0) { mismatches++; report.append("$sym features divergentes: $badF $badNames\n") }
             if (badP > 0) { mismatches++; report.append("$sym probabilidades divergentes: $badP/${expP.size}\n") }
-            report.append("$sym OK-check: barras=${h1.n} candidatos=${cands.size}\n")
+            // 4) planos estruturais do ranking (último candle, ambas as direções)
+            val plans = g["plans"]!!.jsonArray.map { it.jsonObject }
+            var badPl = 0
+            for (e in plans) {
+                val d = e["dir"]!!.jsonPrimitive.content.toDouble().toInt()
+                val px = (e["price"] as? JsonPrimitive)?.doubleOrNull
+                val pl = Candidates.plan(F, d, px)
+                fun ex(k: String) = e[k]!!.jsonPrimitive.doubleOrNull!!
+                if (pl == null || !close(pl.sl, ex("sl")) || !close(pl.tp1, ex("tp1")) || !close(pl.tp2, ex("tp2")) ||
+                    !close(pl.rr1, ex("rr1")) || !close(pl.roomR, ex("room_r")) || !close(pl.riskAtr, ex("risk_atr")) ||
+                    pl.inZone.toDouble() != ex("in_zone") || pl.atEma.toDouble() != ex("at_ema") ||
+                    pl.pdSweep.toDouble() != ex("pd_sweep") || pl.d1Dir != ex("d1_dir") || pl.tp1Structural.toDouble() != ex("tp1_structural")) badPl++
+            }
+            if (badPl > 0 || plans.isEmpty()) { mismatches++; report.append("$sym planos divergentes: $badPl/${plans.size}\n") }
+            report.append("$sym OK-check: barras=${h1.n} candidatos=${cands.size} planos=${plans.size}\n")
         }
         println(report)
         assertTrue(report.toString(), mismatches == 0)

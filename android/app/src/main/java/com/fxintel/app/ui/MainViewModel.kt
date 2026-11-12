@@ -199,7 +199,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun setAnalysis(r: Analysis) {
-        val sel = r.signal ?: r.observations.firstOrNull()
+        val sel = r.signal ?: r.ranking.firstOrNull() ?: r.observations.firstOrNull()
         _ui.update { it.copy(analysis = r, selected = sel, chartSymbol = sel?.instrument ?: it.chartSymbol) }
         loadChart()
     }

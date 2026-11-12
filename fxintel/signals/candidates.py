@@ -21,9 +21,11 @@ import numpy as np
 import pandas as pd
 
 SETUPS = ("PULLBACK", "BREAKOUT", "SWEEP", "TREND")
+PLAN = "ESTRUTURA"  # plano estrutural sem gatilho ativo (usado apenas no ranking, nunca emitido como sinal)
 SETUP_PT = {"PULLBACK": "Pullback em tendência", "BREAKOUT": "Rompimento de estrutura com deslocamento",
             "SWEEP": "Varredura de liquidez / falso rompimento",
-            "TREND": "Momentum de série temporal (BOS de continuação alinhado D1/H4/H1)"}
+            "TREND": "Momentum de série temporal (BOS de continuação alinhado D1/H4/H1)",
+            "ESTRUTURA": "Plano estrutural (aguardando gatilho técnico)"}
 
 MIN_RISK_ATR = 1.0
 MAX_RISK_ATR = 2.5
@@ -133,14 +135,14 @@ def _dir_frame(F: pd.DataFrame, d: int) -> pd.DataFrame:
     return out[out["setup"] != ""]
 
 
-def _targets(F: pd.DataFrame, cand: pd.DataFrame) -> pd.DataFrame:
+def _targets(F: pd.DataFrame, cand: pd.DataFrame, entry_override: float | None = None) -> pd.DataFrame:
     """Calcula risco, TP1/TP2 em pools de liquidez e espaço livre até o obstáculo oposto."""
     rows = []
     for t, r in cand.iterrows():
         d = int(r["dir"])
         f = F.loc[t]
         s = _side_cols(d)
-        entry = float(f["c"])
+        entry = float(f["c"]) if entry_override is None else float(entry_override)
         atr = float(f["atr"])
         if not np.isfinite(atr) or atr <= 0:
             continue
@@ -215,3 +217,44 @@ def generate(F: pd.DataFrame, cooldown: int = 3, last_n: int | None = None) -> p
     if last_n:
         cand = cand[cand.index >= G.index[-last_n]]
     return _targets(G, cand)
+
+
+def plan(F: pd.DataFrame, d: int, price: float | None = None) -> pd.DataFrame:
+    """Plano estrutural no último candle fechado para o ranking, quando não há gatilho ativo na direção d.
+
+    Stop além do último swing protegido (± 0,25 ATR), limitado a [1, 2,5] ATR; alvos nos mesmos pools de
+    liquidez dos setups. `price` ancora o plano no preço atual (sem candle de sinal não há deriva a tolerar).
+    Não é um sinal: serve para ordenar/acompanhar oportunidades por nota.
+    """
+    if F.empty:
+        return pd.DataFrame()
+    s = _side_cols(d)
+    f = F.iloc[-1]
+    atr = float(f["atr"])
+    c = float(f["c"]) if price is None else float(price)
+    if not np.isfinite(atr) or atr <= 0:
+        return pd.DataFrame()
+    swing = float(f["last_sl"] if d == 1 else f["last_sh"])
+    sl = swing - d * 0.25 * atr if np.isfinite(swing) else c - d * DEFAULT_TP1_R * atr
+    if d * (c - sl) > MAX_RISK_ATR * atr:
+        sl = c - d * (MAX_RISK_ATR - 1e-6) * atr  # margem contra arredondamento no limite
+    if d * (c - sl) <= 0:  # preço já além do swing protegido
+        sl = c - d * MIN_RISK_ATR * atr
+    fill0 = lambda v: 0.0 if not np.isfinite(v) else float(v)  # noqa: E731
+    d1_dir = float(np.sign(0.5 * fill0(f["d1_trend"]) + 0.3 * fill0(f["d1_ema_stack"]) + 0.2 * fill0(f["d1_above_ema200"])))
+    tail = F.iloc[-3:]
+    in_zone = bool(tail[s["in_fvg"]].max() > 0 or tail[s["in_ob"]].max() > 0
+                   or fill0(f.get(s["h4_in_fvg"], np.nan)) > 0 or fill0(f.get(s["h4_in_ob"], np.nan)) > 0)
+    if d == 1:
+        at_ema = bool(tail["l"].min() <= f["ema50"] + 0.3 * atr)
+        pd_sweep = bool(f["l"] < f["pdl"] and f["c"] > f["pdl"])
+    else:
+        at_ema = bool(tail["h"].max() >= f["ema50"] - 0.3 * atr)
+        pd_sweep = bool(f["h"] > f["pdh"] and f["c"] < f["pdh"])
+    cand = pd.DataFrame({
+        "dir": [d], "setup": [PLAN], "sl": [sl], "n_setups": [0], "d1_dir": [d1_dir], "in_zone": [int(in_zone)],
+        "at_ema": [int(at_ema)], "trigger_engulf": [int(f[s["engulf"]])], "trigger_pin": [int(f[s["pin"]])],
+        "pd_sweep": [int(pd_sweep)],
+    }, index=[F.index[-1]])
+    out = _targets(F, cand, entry_override=c)
+    return out

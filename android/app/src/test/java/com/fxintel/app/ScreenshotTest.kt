@@ -57,4 +57,15 @@ class ScreenshotTest {
             }
         }
     }
+
+    @Test fun rankingCard() {
+        val a = JsonCfg.decodeFromString<Analysis>(res("analysis_ranking.json"))
+        paparazzi.snapshot {
+            FxTheme {
+                Column(Modifier.background(MaterialTheme.colorScheme.background)) {
+                    com.fxintel.app.ui.RankingCard(a.ranking, a.id, onSelect = {}, onPaper = null)
+                }
+            }
+        }
+    }
 }

@@ -29,6 +29,9 @@ class LiveEngineTest {
             println("rodada ${round + 1}: ${a.status} | ${a.headline} | ${ms} ms | ${a.trigger}")
             println("  motivos: ${a.no_signal_reasons}")
             a.market.forEach { println("  ${it.symbol} trend=${it.trend} align=${it.alignment} regime=${it.regime} fund=${it.fundamental_score} cand=${it.candidates} err=${it.error}") }
+            println("  RANKING (top 5 por nota):")
+            a.ranking.forEach { c -> println("   #${c.rank} ${c.instrument} ${c.direction} nota=${c.score} ${c.status} setup=${c.setup} EV=${c.expected_value_r} bloqueios=${c.blocked_by}") }
+            assertTrue(a.ranking.size == 5 && a.ranking.zipWithNext().all { (x, y) -> x.score >= y.score })
             (listOfNotNull(a.signal) + a.observations).forEach { c ->
                 println("  ${c.direction} ${c.instrument} ${c.setup} entrada=${c.entry.price} sl=${c.stop_loss.price} tp1=${c.take_profit[0].price} " +
                     "p=${c.probability.calibrated_p} ev=${c.expected_value_r} score=${c.score} falhas=${c.gates.filter { !it.passed }.map { it.gate }}")

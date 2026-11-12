@@ -169,7 +169,7 @@ class LocalRepo(private val dir: File, modelJson: String?, cbJson: String) {
     fun health(): Health {
         val ms = engine.modelStatus()
         val prov = md.health.values.map { ProviderHealth(it.name, it.ok, it.lastLatencyMs, it.requests, it.failures, it.lastError) }
-        return Health(if (prov.all { it.ok }) "ok" else "degradado", "1.1.0 (autônomo)", (System.currentTimeMillis() - started) / 1000.0,
+        return Health(if (prov.all { it.ok }) "ok" else "degradado", "1.2.0 (autônomo)", (System.currentTimeMillis() - started) / 1000.0,
             Time.marketOpen(System.currentTimeMillis() / 1000), quotesAt, true, prov.filter { !it.ok }.map { it.name },
             Providers(prov, false), HealthModel(ms.available, ms.validated, ms.age_hours))
     }

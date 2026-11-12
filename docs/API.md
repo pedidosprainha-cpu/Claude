@@ -47,7 +47,12 @@ Documentação interativa (OpenAPI/Swagger): `/docs`.
     "risk": {"approved": true, "sizing": {"lots": 0.19, "risk_amount": 49.6, "margin": …}}
   },
   "no_signal_reasons": ["modelo_validado: bloqueou 3 candidato(s)", …],
-  "observations": [ …candidatos que não passaram em todos os portões… ],
+  "ranking": [                      // 5 melhores oportunidades por nota (uma por instrumento)
+    {"rank": 1, "instrument": "AUDUSD", "direction": "SELL", "score": 57.7, "status": "AGUARDANDO_GATILHO",
+     "status_text": "…", "blocked_by": ["setup_ativo", "spread"], "has_setup": false, "entry": {…}, "stop_loss": {…},
+     "take_profit": […], "probability": {…}, "expected_value_r": -0.04, "risk": {"sizing": {…}}, …}
+  ],
+  "observations": [ …setups ativos que não passaram em todos os portões… ],
   "market": [ …resumo por instrumento: tendências por TF, alinhamento, regime, score fundamental, eventos… ],
   "model": {…}, "fundamentals": {…}, "correlations": […], "data": {…}, "risk_state": {…},
   "timings": {"quotes_ms": …, "data_ms": …, "analysis_ms": …}, "elapsed_ms": …, "disclaimer": "…"

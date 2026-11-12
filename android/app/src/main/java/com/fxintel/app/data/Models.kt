@@ -93,6 +93,11 @@ data class Candidate(
     val gates: List<Gate> = emptyList(),
     val risk: RiskEval? = null,
     val execution_note: String? = null,
+    val has_setup: Boolean = true,
+    val rank: Int? = null,
+    val status: String? = null,          // SINAL | ELEGIVEL | OBSERVACAO | AGUARDANDO_GATILHO
+    val status_text: String? = null,
+    val blocked_by: List<String> = emptyList(),
 )
 
 @Serializable
@@ -141,6 +146,7 @@ data class Analysis(
     val signal: Candidate? = null,
     val no_signal_reasons: List<String> = emptyList(),
     val observations: List<Candidate> = emptyList(),
+    val ranking: List<Candidate> = emptyList(),   // 5 melhores oportunidades por nota
     val market: List<MarketRow> = emptyList(),
     val model: ModelStatus? = null,
     val fundamentals: Fundamentals? = null,

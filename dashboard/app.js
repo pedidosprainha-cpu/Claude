@@ -95,7 +95,8 @@ function candHTML(s, isSignal) {
   return `
   <div class="sig-head"><span class="dir ${s.direction}">${s.direction}</span><span class="headline">${s.instrument}</span>
     <span class="pill">${esc(s.setup_name)}</span><span class="pill">score ${fmt(s.score, 0)}</span>
-    ${isSignal ? "" : '<span class="pill bad">observação — não recomendada</span>'}</div>
+    ${isSignal ? "" : `<span class="pill ${s.status === "AGUARDANDO_GATILHO" ? "" : "bad"}">${
+       { ELEGIVEL: "elegível", OBSERVACAO: "observação — não recomendada", AGUARDANDO_GATILHO: "aguardando gatilho — não é sinal" }[s.status] || "observação — não recomendada"}</span>`}</div>
   <div class="kv">
     <div>Instrumento</div><div>${s.instrument}</div>
     <div>Direção</div><div>${s.direction === "BUY" ? "Compra (BUY)" : "Venda (SELL)"}</div>
@@ -127,22 +128,31 @@ function renderAnalysis(r) {
   if (r.signal) html += candHTML(r.signal, true);
   else html += `<div class="nosig"><div class="headline">${esc(r.headline)}</div><ul class="just">${r.no_signal_reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     <div class="muted">O motor não emite recomendação quando dados, condições de mercado ou evidência estatística são insuficientes.</div></div>`;
-  if (r.observations && r.observations.length) {
-    html += `<h4>Observações (não passaram em todos os portões)</h4>` + r.observations.map((c, i) =>
-      `<div class="obs" data-i="${i}"><b>${c.direction} ${c.instrument}</b> · ${esc(c.setup_name)} · score ${fmt(c.score, 0)} · EV ${fmt(c.expected_value_r, 3)}R ·
-      <span class="muted">bloqueado por: ${c.gates.filter((g) => !g.passed).map((g) => g.gate).join(", ")}</span><div class="obs-body hidden"></div></div>`).join("");
+  const rk = r.ranking || [];
+  const stLabel = { SINAL: "Sinal", ELEGIVEL: "Elegível", OBSERVACAO: "Observação", AGUARDANDO_GATILHO: "Aguardando gatilho" };
+  const stCls = { SINAL: "ok", ELEGIVEL: "ok", OBSERVACAO: "warn", AGUARDANDO_GATILHO: "" };
+  if (rk.length) {
+    html += `<h4>Ranking — 5 melhores oportunidades (por nota 0–100)</h4>
+    <div class="table-wrap"><table class="ranking"><thead><tr><th>#</th><th>Ativo</th><th>Direção</th><th>Nota</th><th>Status</th><th>Setup</th><th>EV</th><th>Prob.</th><th>R:R</th><th>Bloqueios</th></tr></thead><tbody>
+    ${rk.map((c, i) => `<tr class="click rk" data-i="${i}"><td><b>${c.rank}</b></td><td><b>${c.instrument}</b></td>
+      <td class="${c.direction === "BUY" ? "up" : "down"}">${c.direction}</td>
+      <td><div class="scorebar"><div style="width:${Math.max(0, Math.min(100, c.score))}%"></div></div><b>${fmt(c.score, 0)}</b></td>
+      <td><span class="pill ${stCls[c.status] || ""}">${stLabel[c.status] || "—"}</span></td><td>${esc(c.setup_name)}</td>
+      <td>${fmt(c.expected_value_r, 2)}R</td><td>${pct(c.probability.calibrated_p)}</td><td>${fmt(c.risk_reward.rr_tp1, 2)}</td>
+      <td class="muted" style="white-space:normal">${c.status === "SINAL" ? "—" : esc((c.blocked_by || []).join(", "))}</td></tr>
+      <tr class="rk-body hidden" data-i="${i}"><td colspan="10" style="white-space:normal"></td></tr>`).join("")}</tbody></table></div>
+    <div class="muted">A nota combina valor esperado (45%), técnica (20%), fundamentos (15%), regime (10%) e custo (10%). Só itens com status "Sinal" passaram em todos os portões.</div>`;
   }
   el.innerHTML = html;
-  $$(".obs", el).forEach((o) => (o.onclick = (ev) => {
-    if (ev.target.closest(".obs-body")) return;
-    const c = r.observations[+o.dataset.i]; const b = $(".obs-body", o);
-    if (b.classList.contains("hidden")) { b.innerHTML = candHTML(c, false); b.classList.remove("hidden"); state.selected = c; loadChart(c.instrument); }
-    else b.classList.add("hidden");
+  $$("tr.rk", el).forEach((tr) => (tr.onclick = () => {
+    const i = +tr.dataset.i; const c = rk[i]; const body = $(`tr.rk-body[data-i="${i}"]`, el);
+    if (body.classList.contains("hidden")) { body.firstElementChild.innerHTML = candHTML(c, c.status === "SINAL"); body.classList.remove("hidden"); state.selected = c; loadChart(c.instrument); }
+    else body.classList.add("hidden");
   }));
   const bp = $("#btn-paper");
   if (bp) bp.onclick = async () => { try { const x = await api("/api/v1/paper/execute", { method: "POST", body: JSON.stringify({ signal_id: r.signal.id }) }); bp.textContent = "Executado (demo) @ " + x.fill_price; bp.disabled = true; } catch (e) { alert(e.message); } };
-  state.selected = r.signal || null;
-  loadChart(r.signal ? r.signal.instrument : (r.observations?.[0]?.instrument || state.symbol));
+  state.selected = r.signal || rk[0] || null;
+  loadChart(state.selected ? state.selected.instrument : state.symbol);
   renderMarket(r);
 }
 

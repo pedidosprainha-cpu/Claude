@@ -4,7 +4,7 @@ Data de execução: 12/11/2026 (ambiente Linux, 4 vCPU, dados reais via internet
 
 ## 1. Testes automatizados
 
-### Python (`python -m pytest`): 22 testes, 22 aprovados
+### Python (`python -m pytest`): 23 testes, 23 aprovados
 
 | Área | Testes |
 |---|---|
@@ -17,15 +17,15 @@ Data de execução: 12/11/2026 (ambiente Linux, 4 vCPU, dados reais via internet
 
 Os testes revelaram e corrigiram um erro de arredondamento no dimensionamento (0,0999… lote → 0,09).
 
-### Android (`./gradlew testDebugUnitTest`): 10 testes, todos aprovados
+### Android (`./gradlew testDebugUnitTest`): 12 testes, todos aprovados
 
 | Teste | O que verifica |
 |---|---|
-| `ApiParsingTest` (5) | decodificação de respostas reais do servidor (modo servidor) |
-| `GoldenEngineTest` (1) | **motor Kotlin = motor Python** sobre 3.000 barras H1 reais × 4 instrumentos: 59 colunas × 400 barras, 599 candidatos, 54 features e probabilidades, com 0 divergências; a injeção proposital de 3 alterações no fixture foi detectada |
+| `ApiParsingTest` (6) | decodificação de respostas reais do servidor, incluindo o ranking (5 itens ordenados por nota) |
+| `GoldenEngineTest` (1) | inclui os planos estruturais do ranking (6 por instrumento: 2 direções × 3 preços de ancoragem); **motor Kotlin = motor Python** sobre 3.000 barras H1 reais × 4 instrumentos: 59 colunas × 400 barras, 599 candidatos, 54 features e probabilidades, com 0 divergências; a injeção proposital de 3 alterações no fixture foi detectada |
 | `LiveEngineTest` (1, internet) | motor autônomo com dados públicos reais: 16/16 cotações Swissquote, 0 falhas de fonte; 6,2 s na 1ª análise (download do histórico) e 2,1 s com cache |
 | `LocalRepoTest` (1, internet) | modo autônomo de ponta a ponta: cotações, análise, persistência e reabertura, gráfico, saúde, validação de configurações, acompanhamento de sinais e alertas |
-| `ScreenshotTest` (2) | renderização JVM (Paparazzi) do cartão de sinal e do gráfico com níveis |
+| `ScreenshotTest` (3) | renderização JVM (Paparazzi) do ranking, do cartão de sinal e do gráfico com níveis |
 
 Os testes com internet rodam com `FXI_LIVE_TEST=1` (executados com sucesso em 12/11/2026).
 

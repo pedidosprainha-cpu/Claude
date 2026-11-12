@@ -36,6 +36,7 @@ from .quant.anomaly import data_quality, market_anomalies
 from .quant.correlation import correlation_matrix, top_pairs
 from .quant.features import build_features
 from .quant.model import ProbabilityModel
+from .quant.stats import wilson
 from .quant.regime import StatisticalRegime, rule_regime
 from .risk.manager import RiskManager
 from .signals import candidates as C
@@ -211,6 +212,7 @@ class AnalysisEngine:
             c["eligible"] = all(x["passed"] for x in c["gates"])
         cands.sort(key=lambda c: (c["eligible"], c["score"]), reverse=True)
         best = next((c for c in cands if c["eligible"]), None)
+        ranking = self._ranking(cands, best, quotes, corr, now)
 
         status = "SINAL" if best else "SEM_OPORTUNIDADE"
         if best:
@@ -219,12 +221,13 @@ class AnalysisEngine:
             best["execution_note"] = ("Este é um SINAL analítico. A execução efetiva depende de integração "
                                       "autorizada com corretora e da confirmação das condições reais de negociação.")
         reasons_none = []
+        real = [c for c in cands if c.get("has_setup", True)]
         if not best:
-            if not cands:
+            if not real:
                 reasons_none.append("Nenhum setup técnico ativo nos últimos candles H1 fechados do universo monitorado.")
             else:
                 agg: dict[str, int] = {}
-                for c in cands:
+                for c in real:
                     for gt in c["gates"]:
                         if not gt["passed"]:
                             agg[gt["gate"]] = agg.get(gt["gate"], 0) + 1
@@ -237,7 +240,8 @@ class AnalysisEngine:
                          if best else "Nenhuma oportunidade suficientemente qualificada no momento"),
             "signal": best,
             "no_signal_reasons": reasons_none,
-            "observations": [c for c in cands if c is not best][:5],
+            "ranking": ranking,
+            "observations": [c for c in cands if c is not best and c.get("has_setup", True)][:5],
             "market": [self._overview_row(per_inst[s], quotes.get(s)) for s in universe],
             "model": self.model_status(),
             "fundamentals": {
@@ -353,15 +357,25 @@ class AnalysisEngine:
         })
 
         cand = C.generate(F, last_n=2)
-        if cand.empty or q is None:
+        if q is None:
             return out
-        X = build_features(inst, F, cand, mf, sd).add_prefix("x_")
         model = self.model
-        for t, r in cand.iterrows():
-            out["candidates"].append(self._candidate(inst, F, t, r, X.loc[[t]], q, model, out, now))
+        if not cand.empty:
+            X = build_features(inst, F, cand, mf, sd).add_prefix("x_")
+            for t, r in cand.iterrows():
+                out["candidates"].append(self._candidate(inst, F, t, r, X.loc[[t]], q, model, out, now))
+        # ranking: plano estrutural nas direções sem gatilho ativo (nunca vira sinal)
+        have = set(int(x) for x in cand["dir"]) if not cand.empty else set()
+        for d in (1, -1):
+            if d in have:
+                continue
+            pl = C.plan(F, d, price=q.mid)
+            if not pl.empty:
+                out["candidates"].append(self._candidate(inst, F, pl.index[0], pl.iloc[0], None, q, model, out, now,
+                                                         plan=True))
         return out
 
-    def _candidate(self, inst, F, t, r, X, q: Quote, model, ctx: dict, now: datetime) -> dict:
+    def _candidate(self, inst, F, t, r, X, q: Quote, model, ctx: dict, now: datetime, plan: bool = False) -> dict:
         st = self.settings
         g = st["gates"]
         d = int(r["dir"])
@@ -377,20 +391,36 @@ class AnalysisEngine:
         rr_net = d * (tp1 - entry) / (risk + slip) if risk > 0 else float("nan")
         drift = d * (entry - float(r["entry_ref"])) / atr
 
-        p = float(model.predict(X)[0]) if model is not None else None
-        cal = self.calibrated(p) if p is not None else {"p_oos": None, "ci90": None, "n_bin": 0}
-        p_use = cal["p_oos"] if cal.get("p_oos") is not None and cal.get("n_bin", 0) >= 30 else p
+        if plan:
+            # sem setup ativo o modelo não se aplica: usa a taxa-base histórica de acerto do TP1 (com IC de Wilson)
+            p = None
+            base = model.meta.get("base_rate") if model is not None else None
+            n_tr = int(model.meta.get("n_train", 0)) if model is not None else 0
+            cal = ({"p_oos": base, "ci90": list(wilson(int(round(base * n_tr)), n_tr)), "n_bin": n_tr}
+                   if base is not None and n_tr else {"p_oos": None, "ci90": None, "n_bin": 0})
+            p_use = base
+        else:
+            p = float(model.predict(X)[0]) if model is not None else None
+            cal = self.calibrated(p) if p is not None else {"p_oos": None, "ci90": None, "n_bin": 0}
+            p_use = cal["p_oos"] if cal.get("p_oos") is not None and cal.get("n_bin", 0) >= 30 else p
         ev_r = float(model.expected_r(np.array([p_use]), np.array([rr1]))[0]) if (model and p_use is not None
                                                                                and np.isfinite(rr1)) else None
         ev_lo = (float(model.expected_r(np.array([cal["ci90"][0]]), np.array([rr1]))[0])
                  if model and cal.get("ci90") and np.isfinite(rr1) else None)
         conf = self.confidence(cal)
+        if plan:
+            conf["level"] = "baixa"
+            conf["limitations"].insert(0, "Sem setup ativo: probabilidade = taxa-base histórica de todos os setups "
+                                          "(o modelo só avalia setups formados)")
         ms = self.model_status()
 
         gates = []
 
         def gate(name, ok, detail):
             gates.append({"gate": name, "passed": bool(ok), "detail": detail})
+
+        if plan:
+            gate("setup_ativo", False, "Sem gatilho técnico nos últimos candles H1 fechados — aguardar a formação de um setup")
 
         gate("mercado_aberto", market_open(now, inst.kind), "Mercado aberto" if market_open(now, inst.kind)
              else "Mercado fechado/pausa de negociação")
@@ -434,7 +464,7 @@ class AnalysisEngine:
                        + 0.1 * (int(r["n_setups"]) > 1), -1, 1)
         fund = float(ctx["fundamental"]["score"]) * d
         reg = ctx["regime"]
-        trend_setups = r["setup"] in ("PULLBACK", "TREND", "BREAKOUT")
+        trend_setups = r["setup"] in ("PULLBACK", "TREND", "BREAKOUT", C.PLAN)
         regime_fit = (0.6 if (trend_setups and reg["trend"] == "tendência") or (not trend_setups and reg["trend"] != "tendência")
                       else -0.3) - (0.6 if reg["vol_shock"] or reg["volatility"] == "extrema" else 0)
         cost_c = 1 - 2 * min(cost_r / max(g["max_cost_r"], 1e-9), 1)
@@ -450,18 +480,20 @@ class AnalysisEngine:
             if ev_time - timedelta(minutes=g["event_blackout_before_min"]) < valid_until:
                 valid_until = max(now, ev_time - timedelta(minutes=g["event_blackout_before_min"]))
         just = self._justification(inst, r, f, ctx, d, fund)
-        contrib = model.contributions(X)[:8] if model is not None else []
+        contrib = model.contributions(X)[:8] if (model is not None and X is not None) else []
         opp_liq = f["near_lo"] if d == 1 else f["near_hi"]
         return {
             "instrument": inst.symbol, "direction": dirtxt, "setup": r["setup"],
             "setup_name": C.SETUP_PT[r["setup"]], "execution_type": "Entrada imediata a mercado (Market Execution)",
+            "has_setup": not plan,
             "signal_bar": t.isoformat(),
             "reference_quote": {"bid": q.bid, "ask": q.ask, "mid": q.mid, "spread_pips": round(q.spread / inst.pip, 2),
                                 "spread_source": q.spread_source, "time": q.time.isoformat(), "source": q.source,
                                 "age_s": round(q.age_seconds(now), 1)},
             "entry": {"price": inst.round_price(entry), "side": "ASK" if d == 1 else "BID"},
             "stop_loss": {"price": inst.round_price(sl), "pips": round(abs(entry - sl) / inst.pip, 1),
-                          "basis": "Além do extremo estrutural do setup + buffer de 0,25 ATR (mín. 1 ATR)"},
+                          "basis": ("Além do último swing protegido + 0,25 ATR (entre 1 e 2,5 ATR do preço atual)" if plan
+                                    else "Além do extremo estrutural do setup + buffer de 0,25 ATR (mín. 1 ATR)")},
             "take_profit": [
                 {"label": "TP1 (50%)", "price": inst.round_price(tp1), "pips": round(abs(tp1 - entry) / inst.pip, 1),
                  "rr": _f(rr1, 2), "basis": "Pool de liquidez oposto" if r["tp1_structural"] else "Alvo padrão 1,5R"},
@@ -475,7 +507,8 @@ class AnalysisEngine:
             "probability": {"model_p": _f(p, 3), "calibrated_p": _f(cal.get("p_oos"), 3),
                             "ci90": [_f(x, 3) for x in cal["ci90"]] if cal.get("ci90") else None,
                             "n_oos_bin": cal.get("n_bin"), "event": "TP1 atingido antes do Stop Loss",
-                            "method": "Regressão logística (walk-forward) → frequência observada fora da amostra na faixa"},
+                            "method": ("Taxa-base histórica (sem setup ativo; IC de Wilson)" if plan else
+                                       "Regressão logística (walk-forward) → frequência observada fora da amostra na faixa")},
             "expected_value_r": _f(ev_r, 3), "expected_value_r_ci_low": _f(ev_lo, 3),
             "confidence": conf,
             "score": round(float(score), 1),
@@ -508,6 +541,34 @@ class AnalysisEngine:
             "context": {"alignment": ctx["alignment"], "regime": ctx["regime"]["label"],
                         "fundamental_score": ctx["fundamental"]["score"]},
         }
+
+    def _ranking(self, cands: list[dict], best: dict | None, quotes: dict, corr, now: datetime, k: int = 5) -> list[dict]:
+        """Top-k oportunidades por nota (uma por instrumento, na direção de maior nota), com status explícito."""
+        by_inst: dict[str, dict] = {}
+        for c in cands:
+            cur = by_inst.get(c["instrument"])
+            if cur is None or (c is best) or (cur is not best and c["score"] > cur["score"]):
+                by_inst[c["instrument"]] = c
+        top = sorted(by_inst.values(), key=lambda c: c["score"], reverse=True)[:k]
+        for i, c in enumerate(top, 1):
+            failed = [g["gate"] for g in c["gates"] if not g["passed"]]
+            if c is best:
+                st, txt = "SINAL", "Sinal emitido: todos os portões aprovados"
+            elif c.get("eligible"):
+                st, txt = "ELEGIVEL", "Aprovada em todos os portões (apenas um sinal é emitido por análise)"
+            elif not c.get("has_setup", True):
+                st, txt = "AGUARDANDO_GATILHO", "Sem setup ativo: acompanhar e aguardar o gatilho técnico"
+            else:
+                st, txt = "OBSERVACAO", "Não recomendada: bloqueada por " + ", ".join(failed)
+            c["rank"], c["status"], c["status_text"], c["blocked_by"] = i, st, txt, failed
+            if "risk" not in c and c["stop_loss"]["price"] is not None:  # dimensionamento informativo
+                try:
+                    c["risk"] = self.risk.evaluate(c["instrument"], 1 if c["direction"] == "BUY" else -1,
+                                                   c["entry"]["price"], c["stop_loss"]["price"], quotes, corr,
+                                                   c["costs"]["slippage_price"], now)
+                except Exception:  # noqa: BLE001
+                    pass
+        return top
 
     def _justification(self, inst, r, f, ctx, d, fund) -> dict:
         s = ctx["summaries"]
@@ -551,7 +612,7 @@ class AnalysisEngine:
             "next_event": (x.get("events") or {}).get("next_critical"),
             "anomalies": (x.get("anomalies") or {}).get("flags"),
             "data_issues": (x.get("data_quality") or {}).get("issues"),
-            "candidates": len(x.get("candidates", [])),
+            "candidates": sum(1 for c in x.get("candidates", []) if c.get("has_setup", True)),
             "levels": x.get("levels", [])[:4],
             "atr_h1": x.get("atr_h1"),
         }

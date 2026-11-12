@@ -17,6 +17,9 @@ Ao receber o comando **ANALISAR MERCADO AGORA**, o motor faz o seguinte:
 3. Avalia cada oportunidade candidata em 14 portões de qualidade e risco.
 4. Apresenta a mais bem classificada **ou informa expressamente que não há oportunidade suficientemente
    qualificada**.
+5. Mostra o **ranking das 5 melhores oportunidades por nota (0–100)**, uma por instrumento, cada uma com status
+   explícito (*Sinal*, *Elegível*, *Observação* ou *Aguardando gatilho*), níveis de entrada/stop/alvos e os
+   portões que a bloqueiam.
 
 > ### Situação atual, sem maquiagem
 > O backtest walk-forward com dados reais e custos (≈13 mil candidatos, 16 instrumentos, jan/2024–nov/2026)
@@ -35,7 +38,7 @@ Ao receber o comando **ANALISAR MERCADO AGORA**, o motor faz o seguinte:
 |---|---|---|
 | 1 | Motor analítico integrado | `fxintel/` · [Arquitetura](docs/ARQUITETURA.md) · [Metodologia](docs/METODOLOGIA.md) |
 | 2 | Backend com APIs (REST + WebSocket) | `backend/` · [API](docs/API.md) |
-| 3 | Aplicativo Android (fonte + APK), **autônomo** | `android/` · **`releases/FXIntel-1.1.0.apk`** · [Android](docs/ANDROID.md) |
+| 3 | Aplicativo Android (fonte + APK), **autônomo** | `android/` · **`releases/FXIntel-1.2.0.apk`** · [Android](docs/ANDROID.md) |
 | 4 | Painel interativo | `dashboard/` (servido em `/` pelo backend) |
 | 5 | Classificação, validação e gestão de risco | `fxintel/engine.py`, `fxintel/risk/`, `fxintel/execution/` |
 | 6 | Relatórios de testes e avaliação quantitativa | [docs/TESTES.md](docs/TESTES.md) · `reports/` |
@@ -48,7 +51,7 @@ pip install -r requirements.txt
 python -m fxintel train      # dados históricos + walk-forward + modelo + relatório (3–6 min)
 python -m fxintel serve      # API + painel em http://localhost:8000 (sem chave por padrão)
 python -m fxintel analyze    # análise no terminal
-python -m pytest             # 22 testes offline
+python -m pytest             # 23 testes offline
 ```
 
 Docker: `cd deploy && docker compose up -d --build` (HTTPS opcional com Caddy).

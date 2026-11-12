@@ -103,3 +103,6 @@ button.ghost { background: none; border: 1px solid var(--border); color: var(--t
 .metric { background: var(--surface-2); border-radius: 10px; padding: 10px; }
 .metric .v { font-size: 20px; font-weight: 700; } .metric .l { font-size: 12px; color: var(--muted); }
 img.report { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+.scorebar { display: inline-block; width: 70px; height: 6px; background: var(--surface-2); border-radius: 3px; margin-right: 6px; vertical-align: middle; overflow: hidden; }
+.scorebar div { height: 6px; background: var(--accent); }
+table.ranking td { vertical-align: middle; }

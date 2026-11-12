@@ -52,4 +52,11 @@ class ApiParsingTest {
         JsonCfg.decodeFromString<List<AlertItem>>(res("alerts.json"))
         JsonCfg.decodeFromString<List<AnalysisRow>>(res("analyses.json"))
     }
+
+    @Test fun rankingParsing() {
+        val a = JsonCfg.decodeFromString<Analysis>(res("analysis_ranking.json"))
+        assertEquals(5, a.ranking.size)
+        assertTrue(a.ranking.zipWithNext().all { (x, y) -> x.score >= y.score })
+        assertTrue(a.ranking.all { it.rank != null && it.status != null })
+    }
 }

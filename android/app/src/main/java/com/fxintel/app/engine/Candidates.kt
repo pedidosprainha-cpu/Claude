@@ -10,7 +10,9 @@ object Candidates {
         "BREAKOUT" to "Rompimento de estrutura com deslocamento",
         "SWEEP" to "Varredura de liquidez / falso rompimento",
         "TREND" to "Momentum de série temporal (BOS de continuação alinhado D1/H4/H1)",
+        "ESTRUTURA" to "Plano estrutural (aguardando gatilho técnico)",
     )
+    const val PLAN = "ESTRUTURA"
     const val MIN_RISK_ATR = 1.0
     const val MAX_RISK_ATR = 2.5
     const val MIN_TP1_R = 1.3
@@ -120,9 +122,36 @@ object Candidates {
         return sel.mapNotNull { targets(F, it) }
     }
 
-    private fun targets(F: Frame, r: Raw): Cand? {
+    /** Plano estrutural no último candle (ranking sem gatilho ativo) — porte de candidates.plan(). */
+    fun plan(F: Frame, d: Int, price: Double? = null): Cand? {
+        if (F.n == 0) return null
+        val s = side(d); val i = F.n - 1
+        val atr = F.at("atr", i); val c = price ?: F.at("c", i)
+        if (atr.isNaN() || atr <= 0) return null
+        val swing = F.at(if (d == 1) "last_sl" else "last_sh", i)
+        var sl = if (!swing.isNaN()) swing - d * 0.25 * atr else c - d * DEFAULT_TP1_R * atr
+        if (d * (c - sl) > MAX_RISK_ATR * atr) sl = c - d * (MAX_RISK_ATR - 1e-6) * atr
+        if (d * (c - sl) <= 0) sl = c - d * MIN_RISK_ATR * atr
+        val d1Dir = S.sign(0.5 * S.fill0(F.at("d1_trend", i)) + 0.3 * S.fill0(F.at("d1_ema_stack", i)) + 0.2 * S.fill0(F.at("d1_above_ema200", i)))
+        val from = maxOf(0, i - 2)
+        fun mx(col: String) = (from..i).maxOf { F.at(col, it).let { v -> if (v.isNaN()) Double.NEGATIVE_INFINITY else v } }
+        fun mn(col: String) = (from..i).minOf { F.at(col, it).let { v -> if (v.isNaN()) Double.POSITIVE_INFINITY else v } }
+        val inZone = mx(s["in_fvg"]!!) > 0 || mx(s["in_ob"]!!) > 0 || S.fill0(F.at(s["h4_in_fvg"]!!, i)) > 0 || S.fill0(F.at(s["h4_in_ob"]!!, i)) > 0
+        val atEma: Boolean; val pdSweep: Boolean
+        if (d == 1) {
+            atEma = mn("l") <= F.at("ema50", i) + 0.3 * atr
+            pdSweep = F.at("l", i) < F.at("pdl", i) && F.at("c", i) > F.at("pdl", i)
+        } else {
+            atEma = mx("h") >= F.at("ema50", i) - 0.3 * atr
+            pdSweep = F.at("h", i) > F.at("pdh", i) && F.at("c", i) < F.at("pdh", i)
+        }
+        return targets(F, Raw(i, d, PLAN, sl, 0, d1Dir, if (inZone) 1 else 0, if (atEma) 1 else 0,
+            F.at(s["engulf"]!!, i).toInt(), F.at(s["pin"]!!, i).toInt(), if (pdSweep) 1 else 0), c)
+    }
+
+    private fun targets(F: Frame, r: Raw, entryOverride: Double? = null): Cand? {
         val d = r.dir; val s = side(d); val i = r.i
-        val entry = F["c"][i]; val atr = F["atr"][i]
+        val entry = entryOverride ?: F["c"][i]; val atr = F["atr"][i]
         if (atr.isNaN() || atr <= 0) return null
         var sl = r.sl
         var risk = d * (entry - sl)

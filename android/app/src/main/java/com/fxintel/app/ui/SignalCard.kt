@@ -50,7 +50,11 @@ fun SignalDetails(c: Candidate, isSignal: Boolean, onPaper: ((String) -> Unit)? 
         FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Chip("score ${f(c.score, 0)}", MaterialTheme.colorScheme.surfaceVariant)
             Chip("confiança ${c.confidence.level}", MaterialTheme.colorScheme.surfaceVariant)
-            if (!isSignal) Chip("observação — não recomendada", fx.badBg)
+            if (!isSignal) when (c.status) {
+                "AGUARDANDO_GATILHO" -> Chip("aguardando gatilho — não é sinal", MaterialTheme.colorScheme.surfaceVariant)
+                "ELEGIVEL" -> Chip("elegível", fx.goodBg)
+                else -> Chip("observação — não recomendada", fx.badBg)
+            }
         }
         SubHeader("Sinal operacional")
         KV("Instrumento", c.instrument, true)

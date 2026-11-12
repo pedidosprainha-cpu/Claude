@@ -181,6 +181,16 @@ object Risk {
     data class Sizing(val ok: Boolean, val lots: Double = 0.0, val riskAmount: Double = 0.0, val riskPct: Double = 0.0,
                       val margin: Double = 0.0, val reason: String? = null)
 
+    /** Intervalo de Wilson (90%) para uma proporção. */
+    fun wilson(k: Int, n: Int, z: Double = 1.645): Pair<Double, Double> {
+        if (n <= 0) return 0.0 to 1.0
+        val p = k.toDouble() / n
+        val den = 1 + z * z / n
+        val c = (p + z * z / (2 * n)) / den
+        val h = z * Math.sqrt(p * (1 - p) / n + z * z / (4.0 * n * n)) / den
+        return maxOf(0.0, c - h) to minOf(1.0, c + h)
+    }
+
     fun conversion(from: String, to: String, mids: Map<String, Double>): Double? {
         if (from == to) return 1.0
         mids["$from$to"]?.let { return it }

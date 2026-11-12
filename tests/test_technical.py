@@ -67,3 +67,20 @@ def test_frame_is_causal():
     cols = [c for c in F.columns if np.issubdtype(F[c].dtype, np.number)]
     diff = [c for c in cols if not np.isclose(a[c], b[c], equal_nan=True)]
     assert diff == [], f"colunas com vazamento de informação futura: {diff}"
+
+
+def test_plan_anchored_at_price():
+    from fxintel.signals import candidates as C
+    h1 = synthetic_bars(2500, seed=5)
+    F, _ = build_frame(h1, derive(h1, "H4"), derive(h1, "D1"))
+    atr = float(F["atr"].iloc[-1])
+    for d in (1, -1):
+        for px in (None, float(F["c"].iloc[-1]) + d * 0.5 * atr):
+            p = C.plan(F, d, px)
+            assert not p.empty
+            r = p.iloc[0]
+            entry = float(F["c"].iloc[-1]) if px is None else px
+            assert abs(r["entry_ref"] - entry) < 1e-12
+            assert 1.0 - 1e-9 <= r["risk_atr"] <= 2.5 + 1e-9      # risco entre 1 e 2,5 ATR
+            assert d * (r["tp1"] - entry) > 0 and d * (entry - r["sl"]) > 0
+            assert r["setup"] == C.PLAN and r["n_setups"] == 0

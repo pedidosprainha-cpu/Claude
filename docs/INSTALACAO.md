@@ -2,7 +2,7 @@
 
 ## 0. Só o aplicativo (recomendado): sem servidor e sem chave
 
-1. Instale `releases/FXIntel-1.1.0.apk` no Android 8.0+ (permita "instalar apps de fontes desconhecidas").
+1. Instale `releases/FXIntel-1.2.0.apk` no Android 8.0+ (permita "instalar apps de fontes desconhecidas").
 2. Abra o app e toque em **ANALISAR MERCADO AGORA**.
 
 O motor roda no aparelho e busca os dados direto das fontes públicas (Swissquote, TrueFX, Yahoo, gold-api,

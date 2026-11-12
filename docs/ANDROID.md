@@ -1,7 +1,7 @@
 # Aplicativo Android
 
 Aplicativo nativo em **Kotlin + Jetpack Compose (Material 3)**, Android 8.0+ (minSdk 26, targetSdk 35).
-APK instalável: `releases/FXIntel-1.1.0.apk`, release assinado, minificado com R8, cerca de 1,75 MB.
+APK instalável: `releases/FXIntel-1.2.0.apk`, release assinado, minificado com R8, cerca de 1,75 MB.
 
 ## Modo autônomo (padrão): sem servidor e sem chave de API
 
@@ -32,9 +32,9 @@ o app acompanha os sinais emitidos (TP1/TP2/stop) e avisa sobre eventos crítico
 
 O modo servidor continua disponível em **Ajustes → Fonte de dados**, com chave opcional.
 
-| Cartão de sinal (render JVM com dados reais da API) | Gráfico com Entrada/SL/TP |
-|---|---|
-| ![sinal](img/android-sinal.png) | ![gráfico](img/android-grafico.png) |
+| Ranking das 5 melhores (render JVM, dados reais) | Cartão de sinal | Gráfico com Entrada/SL/TP |
+|---|---|---|
+| ![ranking](img/android-ranking.png) | ![sinal](img/android-sinal.png) | ![gráfico](img/android-grafico.png) |
 
 > As imagens acima foram renderizadas na JVM com Paparazzi, a partir de respostas reais do backend. O cartão
 > usa uma observação real promovida a "sinal" apenas para exibir todos os campos. Não havia emulador/KVM
@@ -49,6 +49,9 @@ O modo servidor continua disponível em **Ajustes → Fonte de dados**, com chav
   e execução em conta demo (modo servidor). Também mostra observações não recomendadas, gráfico de candles (M15/H1/H4/D1) com
   linhas de Entrada, SL, TP1 e TP2, visão do mercado (tendências D1/H4/H1, score fundamental, regime, eventos),
   força relativa das moedas e próximos eventos.
+- **Ranking:** as 5 melhores oportunidades por nota (0–100), com barra da nota, status (Sinal / Elegível /
+  Observação / Aguardando gatilho), EV, probabilidade, R:R e bloqueios; toque para ver entrada, stop, alvos,
+  justificativas e o gráfico com os níveis.
 - **Histórico:** sinais emitidos com status forward e resultado em R; análises anteriores, que podem ser reabertas no Painel.
 - **Alertas:** lista com badge de não lidos; notificações do sistema em tempo real (app aberto) e por
   WorkManager a cada 15 min (app em segundo plano).

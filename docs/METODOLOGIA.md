@@ -116,6 +116,26 @@ na barra *i+R*. Um teste automatizado recalcula o quadro com dados truncados e e
 
 A pontuação **ordena** os candidatos. A **elegibilidade** é decidida pelos portões.
 
+### Ranking das 5 melhores oportunidades
+
+A cada análise, todos os instrumentos são pontuados e os **5 de maior nota** são exibidos (um por instrumento, na
+direção de maior nota):
+
+- Instrumento **com setup ativo**: o candidato do setup, com probabilidade do modelo (calibrada OOS).
+- Instrumento **sem setup ativo**: um *plano estrutural* ancorado no preço atual, com stop além do último swing
+  protegido + 0,25 ATR (entre 1 e 2,5 ATR) e alvos nos mesmos pools de liquidez. Como o modelo só avalia setups
+  formados, a probabilidade usada é a **taxa-base histórica** de acerto do TP1 (com IC de Wilson). O plano recebe
+  o portão `setup_ativo` reprovado e **nunca vira sinal**.
+
+| Status | Significado |
+|---|---|
+| Sinal | passou em todos os portões e foi o escolhido da análise |
+| Elegível | passou em todos os portões, mas apenas um sinal é emitido por análise |
+| Observação | setup ativo reprovado em algum portão (listados em "bloqueios") |
+| Aguardando gatilho | sem setup ativo: plano para acompanhar, não para executar |
+
+A mesma lógica roda no servidor (Python) e no app (Kotlin), com paridade dos planos verificada no teste golden.
+
 ## 6. Portões de validação (todos obrigatórios)
 
 1. Mercado aberto.
