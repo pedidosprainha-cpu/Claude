@@ -273,6 +273,7 @@ def load_model(path: str = MODEL_PATH) -> ExplosionModel | None:
                            float(d["alert_p"]), [tuple(x) for x in d["levels"]], d.get("move_q", {}),
                            d.get("direction", {}), d.get("bracket", {}), bool(d.get("validated", False)),
                            d.get("info", {}))
+        m.info["feature_ranges"] = d.get("feature_ranges", {})
     except (OSError, KeyError, ValueError, TypeError):
         m = None
     _CACHE[path] = m

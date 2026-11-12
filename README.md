@@ -204,6 +204,38 @@ andar ≥ 0,5× a amplitude diária média (ADR), para qualquer lado, em até 4 
 - Com o monitor de rompimentos ligado, o app avisa a cada hora cheia quando um ativo entra em
   alerta alto ou extremo (ajuste "Alertas de explosão").
 
+### Confiabilidade: qualidade dos dados, paridade e placar ao vivo
+
+- **Qualidade dos dados** (`fxengine/data/quality.py`), antes de qualquer modelo: candles H1
+  atrasados com o mercado aberto, picos anômalos (barra com range > 10× o típico), saltos
+  entre candles, horas faltando, cotação congelada, cotação ao vivo invertida, distante do
+  gráfico (> 1 ADR) ou com spread anormal, e histórico curto para as features. Problema grave
+  vira trava ("dados suspeitos") e nenhum trade ou alerta é emitido para o ativo; o resto vira
+  aviso.
+- **Fora do histórico**: cada modelo guarda a faixa (0,5%–99,5%) de cada entrada vista no
+  treino (`research/feature_ranges.py`); se a leitura atual extrapola claramente essa faixa, o
+  app avisa que a probabilidade é menos confiável.
+- **Paridade ao vivo × histórico** (`tests/test_quality.py`): a varredura ao vivo, numa hora
+  passada, tem de calcular as mesmas features que a reconstituição usada no treino (inclusive
+  força relativa e sua aceleração). É a proteção contra o erro mais comum em modelos de
+  mercado: o app ver dados diferentes dos que o modelo viu.
+- **Placar ao vivo** (`fxengine/track.py`): o app registra cada leitura de explosão e cada
+  recomendação executável e, quando o prazo vence, confere nos candles reais. O cartão "Placar
+  ao vivo" compara o acerto real com o validado (explosões, direção e R dos sinais).
+- Uma falha de dado ou cálculo num ativo nunca derruba a varredura dos outros.
+
+### Combinação dos modelos (pesquisa)
+
+`research/ensemble_oos.py` gera previsões fora da amostra dos três modelos (sinal principal,
+explosão e direção) nos mesmos 8 blocos; `research/train_ensemble.py` testa 6 políticas
+pré-registradas × 5 geometrias (por exemplo, "explosão + direção + sinal concordam"). Nenhuma
+passou: todas negativas no walk-forward (a melhor −0,07R, pior bloco −0,10R), embora quase
+todas fiquem positivas no último período (jul–nov/2026: +0,13R na melhor), sinal de mudança
+recente de regime, não de vantagem comprovada. Por isso a regra de decisão não mudou; a
+leitura de explosão entra na análise como contexto de risco ("explosão provável nas próximas
+4 h", com aviso quando o viés aponta contra o lado da análise), e o placar ao vivo vai mostrar
+se o regime recente se mantém.
+
 ### Plano do trade
 
 - **Stop**: além do swing M15/H1 mais próximo que fique entre 0.6×ATR H1 (e 1.2×ATR M15)

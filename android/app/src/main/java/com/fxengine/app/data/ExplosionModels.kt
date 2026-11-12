@@ -20,6 +20,7 @@ data class ExplosionItem(
     val drivers: List<String>, val events: List<String>, val plan: ExplosionPlan, val orderText: String,
     val rangeLow: String = "", val rangeHigh: String = "",
     val pSide: Double? = null, val dirConfident: Boolean = false, val dirUseful: Boolean = false,
+    val dataIssues: List<String> = emptyList(), val blocked: Boolean = false, val ood: List<String> = emptyList(),
 )
 
 data class ExplosionModelInfo(
@@ -39,6 +40,7 @@ data class ExplosionResult(
     val timestamp: String, val weekday: String, val session: String, val fxOpen: Boolean,
     val scanned: Int, val alerts: Int, val nextUpdate: String, val items: List<ExplosionItem>,
     val model: ExplosionModelInfo?, val dataIssues: List<String>, val elapsedS: Double,
+    val track: TrackInfo? = null,
 )
 
 sealed interface ExplosionOutput {
@@ -72,6 +74,8 @@ private fun parseExplosionItem(o: JSONObject): ExplosionItem {
         ),
         orderText = o.xs("order_text"), rangeLow = o.xs("range_low"), rangeHigh = o.xs("range_high"),
         pSide = o.xdn("p_side"), dirConfident = o.optBoolean("dir_confident"), dirUseful = o.optBoolean("dir_useful"),
+        dataIssues = o.optJSONArray("data_issues").xstrings(), blocked = o.optBoolean("blocked"),
+        ood = o.optJSONArray("ood").xstrings(),
     )
 }
 
@@ -112,7 +116,7 @@ fun parseExplosions(raw: String): ExplosionOutput = try {
                 fxOpen = j.optBoolean("fx_open"), scanned = j.optInt("scanned"), alerts = j.optInt("alerts"),
                 nextUpdate = j.xs("next_update"), items = List(arr.length()) { parseExplosionItem(arr.getJSONObject(it)) },
                 model = parseExplosionModel(j.optJSONObject("model")), dataIssues = j.optJSONArray("data_issues").xstrings(),
-                elapsedS = j.xd("elapsed_s"),
+                elapsedS = j.xd("elapsed_s"), track = parseTrack(j.optJSONObject("track")),
             ),
             raw,
         )

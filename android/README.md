@@ -26,6 +26,12 @@ Versões novas instalam por cima da antiga desde que assinadas com a mesma chave
 | **Mercado** | Força das 8 moedas, macro (VIX, Treasuries, DXY, petróleo, cobre), juros dos bancos centrais, agenda de alto impacto, COT e manchetes. |
 | **Ajustes** | Saldo da conta, risco por trade (o lote é calculado com eles), ativos analisados em *Todos* (Todos / Forex / Metais ou **Escolher** uma lista própria), modelo histórico (probabilidade calibrada, filtro e plano validado) e manchetes. |
 
+Confiabilidade: antes de qualquer modelo o app confere os dados (candles atrasados, picos
+anômalos, cotação divergente do gráfico, histórico curto) e, se algo estiver errado, suspende
+o trade ou o alerta daquele ativo e diz por quê. O cartão **Placar ao vivo** (abas Analisar e
+Explosões) mostra o acerto real das previsões que o próprio app fez neste aparelho, conferidas
+nos candles depois do prazo.
+
 A última análise fica salva (a geral e a do último ativo); se ela tiver mais de 5 minutos o app
 avisa para analisar de novo. Nas abas Rompimentos e Ranking, **Análise completa de …** abre a
 análise individual do ativo na aba Analisar.

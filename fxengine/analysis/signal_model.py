@@ -227,6 +227,7 @@ def load_model(path: str = MODEL_PATH) -> SignalModel | None:
                         bool(d.get("validated", False)), d.get("info", {}), d.get("mtype", "ridge"),
                         d.get("gbm", {}), float(d.get("win_r", 1.0)), float(d.get("loss_r", -1.0)))
         m.info.setdefault("filter_q", float(d.get("filter_q", 0.1)))
+        m.info["feature_ranges"] = d.get("feature_ranges", {})
     except (OSError, KeyError, ValueError, TypeError):
         m = None
     _CACHE[path] = m
@@ -243,6 +244,7 @@ class SignalEval:
     passes: bool          # inside the filter used in the historical validation
     other_ev_r: float     # calibrated expected R of the opposite direction
     feats: dict
+    raw_feats: dict = field(default_factory=dict)   # direction-free inputs (compared with training ranges)
 
 
 def evaluate(model: SignalModel | None, h1_closed: pd.DataFrame, strength_score: float, spread: float,
@@ -258,7 +260,8 @@ def evaluate(model: SignalModel | None, h1_closed: pd.DataFrame, strength_score:
         p, ev = model.calibrated(rev, rz)
         out[dd] = (p, ev, rev, feats)
     p, ev, rev, feats = out[d]
-    return SignalEval(d, p, ev, rev, model.grade(rev), rev >= model.ev_exec, out[-d][1], feats)
+    raw = {f: float(row[f]) for f in FEATURES if np.isfinite(row[f])}
+    return SignalEval(d, p, ev, rev, model.grade(rev), rev >= model.ev_exec, out[-d][1], feats, raw)
 
 
 EXIT_TEXT = {"trail": "stop móvel após +1R", "be": "stop na entrada após +1R", "tp": "alvo fixo",

@@ -14,7 +14,10 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 from .analysis import explosion as ex
+from . import sessions
 from .analysis.signal_model import closed_bars
+from .data import quality
+from .instruments import typical_spread_pips
 from .config import Settings
 from .data.provider import LIGHT
 from .instruments import Instrument, select
@@ -43,6 +46,9 @@ class ExplosionAlert:
     feats: dict = field(default_factory=dict)
     dir_confident: bool = False # direction among the most confident readings of the validation
     dir_useful: bool = False    # the direction model passed its validation rule
+    data_issues: list[str] = field(default_factory=list)   # data-quality findings (fxengine/data/quality.py)
+    blocked: bool = False       # suspicious data: no alert is raised for this instrument
+    ood: list[str] = field(default_factory=list)           # inputs outside the training range
 
     @property
     def symbol(self) -> str:
@@ -122,8 +128,10 @@ def _strength_points(data: dict, now) -> tuple:
 
 
 def scan(s: Settings | None = None, spec: str | None = None, provider=None, progress=None,
-         model: ex.ExplosionModel | None = None) -> tuple[list[ExplosionAlert], dict, datetime]:
-    """Returns (alerts sorted by probability, errors, now)."""
+         model: ex.ExplosionModel | None = None, collect: dict | None = None
+         ) -> tuple[list[ExplosionAlert], dict, datetime]:
+    """Returns (alerts sorted by probability, errors, now). `collect` receives the closed H1
+    frames (used to score earlier predictions in fxengine/track.py)."""
     s = s or Settings()
     m = model or ex.load_model()
     if m is None:
@@ -146,39 +154,51 @@ def scan(s: Settings | None = None, spec: str | None = None, provider=None, prog
     st_now, st_4, st_24 = _strength_points(data, now if not s.offline else None)
     out = []
     for inst in targets:
-        d = data.get(inst.symbol)
-        if d is None:
-            continue
         try:
-            h1 = closed_bars(d.frames["H1"], now if not s.offline else d.quote_ts)
-            sc = lambda st: st.pair_score(inst.base, inst.quote) if st is not None else 0.0  # noqa: E731
-            ff = ex.feature_frame(h1.iloc[-3000:], inst.is_metal, m.horizon, sc(st_now),
-                                  {"4": sc(st_4), "24": sc(st_24)})
-        except Exception as e:  # noqa: BLE001
-            errors[inst.symbol] = f"features: {e}"
-            continue
-        row = ff.iloc[-1]
-        cols = dict.fromkeys(ex.FEATURES + ex.DIR_SIGNED + ex.DIR_CONTEXT)
-        feats = {k: float(row[k]) for k in cols if np.isfinite(row[k])}
-        adr = float(row["adr"]) if np.isfinite(row["adr"]) else float("nan")
-        if not np.isfinite(adr) or adr <= 0:
-            continue
-        p = m.prob(feats)
-        last_close = h1.index[-1] + timedelta(hours=1)
-        until = (last_close + timedelta(hours=m.horizon)).to_pydatetime()
-        ccys = {inst.base, inst.quote} if not inst.is_metal else {"USD"}
-        evs = []
-        for e in events:
-            if e.impact == "High" and e.ccy in ccys | {"ALL"} and now - timedelta(minutes=30) <= e.time <= until:
-                mins = (e.time - now).total_seconds() / 60
-                evs.append(f"{e.ccy} {e.title} " + (f"em {mins:.0f} min" if mins >= 0 else f"há {-mins:.0f} min"))
-        move = float(m.move_q.get("alert_median", m.theta)) * adr if p >= m.alert_p else \
-            float(m.move_q.get("all_median", m.theta / 2)) * adr
-        pu = m.p_up(feats) if m.direction else None
-        out.append(ExplosionAlert(
-            inst, p, m.level(p), p >= m.alert_p, pu, adr, move,
-            d.bid, d.ask, d.quote_ts, d.tradeable, until, drivers(feats, m.horizon), evs,
-            bracket_plan(inst, m, d.bid, d.ask, adr, s, prices, until), feats,
-            dir_confident=pu is not None and m.direction_confident(pu), dir_useful=m.direction_useful))
+            d = data.get(inst.symbol)
+            if d is None:
+                continue
+            try:
+                h1 = closed_bars(d.frames["H1"], now if not s.offline else d.quote_ts)
+                sc = lambda st: st.pair_score(inst.base, inst.quote) if st is not None else 0.0  # noqa: E731
+                ff = ex.feature_frame(h1.iloc[-3000:], inst.is_metal, m.horizon, sc(st_now),
+                                      {"4": sc(st_4), "24": sc(st_24)})
+            except Exception as e:  # noqa: BLE001
+                errors[inst.symbol] = f"features: {e}"
+                continue
+            if collect is not None:
+                collect[inst.symbol] = h1
+            row = ff.iloc[-1]
+            cols = dict.fromkeys(ex.FEATURES + ex.DIR_SIGNED + ex.DIR_CONTEXT)
+            feats = {k: float(row[k]) for k in cols if np.isfinite(row[k])}
+            adr = float(row["adr"]) if np.isfinite(row["adr"]) else float("nan")
+            if not np.isfinite(adr) or adr <= 0:
+                continue
+            p = m.prob(feats)
+            last_close = h1.index[-1] + timedelta(hours=1)
+            until = (last_close + timedelta(hours=m.horizon)).to_pydatetime()
+            ccys = {inst.base, inst.quote} if not inst.is_metal else {"USD"}
+            evs = []
+            for e in events:
+                if e.impact == "High" and e.ccy in ccys | {"ALL"} and now - timedelta(minutes=30) <= e.time <= until:
+                    mins = (e.time - now).total_seconds() / 60
+                    evs.append(f"{e.ccy} {e.title} " + (f"em {mins:.0f} min" if mins >= 0 else f"há {-mins:.0f} min"))
+            move = float(m.move_q.get("alert_median", m.theta)) * adr if p >= m.alert_p else \
+                float(m.move_q.get("all_median", m.theta / 2)) * adr
+            pu = m.p_up(feats) if m.direction else None
+            sess = sessions.state(now)
+            dq = quality.check_h1(h1, now if not s.offline else d.quote_ts,
+                                  sess.metals_open if inst.is_metal else sess.fx_open)
+            quality.check_quote(d.bid, d.ask, float(h1.c.iloc[-1]), adr, typical_spread_pips(inst.symbol) * inst.pip, dq)
+            ood = quality.out_of_range(feats, m.info.get("feature_ranges", {}))
+            out.append(ExplosionAlert(
+                inst, p, m.level(p), p >= m.alert_p and not dq.blocked, pu, adr, move,
+                d.bid, d.ask, d.quote_ts, d.tradeable, until, drivers(feats, m.horizon), evs,
+                bracket_plan(inst, m, d.bid, d.ask, adr, s, prices, until), feats,
+                dir_confident=pu is not None and m.direction_confident(pu), dir_useful=m.direction_useful,
+                data_issues=dq.issues, blocked=dq.blocked, ood=ood))
+        except Exception as e:  # noqa: BLE001 - one bad instrument never kills the scan
+            errors[inst.symbol] = f"erro na leitura: {type(e).__name__}: {e}"
+
     out.sort(key=lambda a: -a.p)
     return out, errors, now

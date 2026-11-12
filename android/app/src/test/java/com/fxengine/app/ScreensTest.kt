@@ -162,6 +162,7 @@ class ScreensTest {
         assertTrue(m.validated && m.testPrecision > m.baseRate && !m.bracketValidated)
         assertTrue("direction", r.items.all { it.pSide != null && it.pSide!! >= 0.5 } && r.items.any { it.dirConfident })
         assertTrue(m.dirWfAcc > 0.5 && !m.dirTradeValidated)
+        assertTrue("live track record", r.track != null && r.track!!.pending >= 0)
     }
 
     @Test
@@ -177,6 +178,11 @@ class ScreensTest {
                 com.fxengine.app.ui.ExplosionDetail(r.items.first { it.level == "alta" }, r.model)
             }
         }
+    }
+
+    @Test
+    fun track_card() = shot("track_card") {
+        Frame { Column(Modifier.padding(16.dp)) { com.fxengine.app.ui.TrackCard(explosions().track!!) } }
     }
 
     @Test

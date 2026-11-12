@@ -18,8 +18,8 @@ android {
         applicationId = "com.fxengine.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.8.0"
+        versionCode = 10
+        versionName = "1.9.0"
         ndk {
             // Modern phones. Add "x86_64" here to run on an emulator.
             abiFilters += listOf("arm64-v8a")

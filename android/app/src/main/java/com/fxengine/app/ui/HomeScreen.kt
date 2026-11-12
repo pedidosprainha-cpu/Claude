@@ -311,6 +311,7 @@ private fun ResultBlock(r: ScanResult, atMillis: Long, running: Boolean) {
         val o = r.best ?: r.top
         if (o != null) OpportunityDetail(o, referenceOnly = r.best == null)
         r.signalModel?.let { SignalModelCard(it) }
+        r.track?.let { TrackCard(it, showExplosions = false) }
         SectionCard {
             Text(r.session, color = Fx.Muted, fontSize = 12.sp)
             Text(

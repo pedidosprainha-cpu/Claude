@@ -31,6 +31,7 @@ data class ScanResult(
     val dataIssues: List<String>,
     val elapsedS: Double,
     val signalModel: SignalModelInfo? = null,
+    val track: TrackInfo? = null,
 )
 
 data class Decision(val execute: Boolean, val headline: String, val reason: String)
@@ -50,6 +51,10 @@ data class SignalModelInfo(
 )
 
 data class Named(val name: String, val value: Double, val note: String = "")
+
+/** Explosion detector reading for the instrument of an opportunity (next hours). */
+data class ExplosionBrief(val p: Double, val level: String, val alert: Boolean, val side: String, val pSide: Double,
+                          val conf: Boolean, val movePips: Double, val horizon: Int)
 
 data class Opportunity(
     val symbol: String,
@@ -84,6 +89,7 @@ data class Opportunity(
     val tp2Basis: String,
     val invalidation: String,
     val edge: Edge?,
+    val explosion: ExplosionBrief? = null,
     val exitKind: String = "partial",
     val exitRule: String = "",
     val horizonH: Int = 0,
@@ -143,6 +149,10 @@ internal fun parseOpp(o: JSONObject): Opportunity {
                 fromModel = it.s("source") == "modelo", passes = it.optBoolean("passes"),
                 otherExpR = if (it.isNull("other_exp_r") || !it.has("other_exp_r")) null else it.d("other_exp_r"))
         },
+        explosion = o.optJSONObject("explosion")?.let {
+            ExplosionBrief(it.d("p"), it.s("level"), it.optBoolean("alert"), it.s("side"), it.d("p_side", 0.5),
+                it.optBoolean("conf"), it.d("move_pips"), it.optInt("horizon", 4))
+        },
         exitKind = o.s("exit_kind").ifBlank { "partial" },
         exitRule = o.s("exit_rule"),
         horizonH = o.optInt("horizon_h", 0),
@@ -189,6 +199,7 @@ fun parseEngineOutput(raw: String): EngineOutput {
                     dataIssues = j.optJSONArray("data_issues").strings(),
                     elapsedS = j.d("elapsed_s"),
                     signalModel = parseSignalModel(j.optJSONObject("signal_model")),
+                    track = parseTrack(j.optJSONObject("track")),
                 ),
                 raw,
             )

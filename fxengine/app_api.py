@@ -116,6 +116,11 @@ def opp_dict(o: Opportunity, tz: ZoneInfo, min_score: float) -> dict:
         "tp2_basis": p.tp2_basis,
         "invalidation": p.invalidation,
         "edge": edge_dict(o),
+        "explosion": None if not o.explosion else {
+            "p": _num(o.explosion["p"], 3), "level": o.explosion["level"], "alert": bool(o.explosion["alert"]),
+            "side": "alta" if o.explosion["p_up"] >= 0.5 else "baixa",
+            "p_side": _num(max(o.explosion["p_up"], 1 - o.explosion["p_up"]), 3), "conf": o.explosion["conf"],
+            "move_pips": _num(i.pips(o.explosion["move"]), 1), "horizon": o.explosion["horizon"]},
         "exit_kind": p.exit_kind,
         "exit_rule": p.exit_rule,
         "trail_pips": _num(i.pips(p.trail_dist), 1),
@@ -208,7 +213,10 @@ def run(cache_dir: str, balance: float = 10_000.0, risk_pct: float = 1.0, assets
             return json.dumps({"ok": False, "error": "Nenhum ativo pôde ser analisado. Verifique a internet.",
                                "detail": "; ".join(f"{k}: {v}" for k, v in list(issues.items())[:6])},
                               ensure_ascii=False)
-        return json.dumps(result_dict(res, tz_name, time.time() - t0), ensure_ascii=False, default=str)
+        out = result_dict(res, tz_name, time.time() - t0)
+        out["track"] = _track_update(cache_dir, opps=[o for o in res.opportunities if o.executable],
+                                     frames=res.h1, now=res.now)
+        return json.dumps(out, ensure_ascii=False, default=str)
     except Exception as e:  # noqa: BLE001 - surface any failure to the UI instead of crashing
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
                            "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)
@@ -519,7 +527,11 @@ def analyze_asset(cache_dir: str, symbol: str, balance: float = 10_000.0, risk_p
                      breakout_plan=plan if plan in bk.MODEL_PATHS else "mercado")
         progress(1, "Iniciando o motor")
         res = Engine(s).scan_asset(symbol, progress=progress)
-        return json.dumps(asset_result_dict(res, tz_name, time.time() - t0), ensure_ascii=False, default=str)
+        out = asset_result_dict(res, tz_name, time.time() - t0)
+        opp = res.opportunity
+        out["track"] = _track_update(cache_dir, opps=[opp] if opp is not None and opp.executable else [],
+                                     frames={res.inst.symbol: res.data.frames.get("H1")}, now=res.now)
+        return json.dumps(out, ensure_ascii=False, default=str)
     except Exception as e:  # noqa: BLE001
         return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}",
                            "detail": traceback.format_exc()[-1500:]}, ensure_ascii=False)
@@ -528,6 +540,27 @@ def analyze_asset(cache_dir: str, symbol: str, balance: float = 10_000.0, risk_p
 # ---------------------------------------------------------------------------- price explosions
 
 LEVEL_LABEL = {"extrema": "EXTREMA", "alta": "ALTA", "elevada": "ELEVADA", "baixa": "NORMAL"}
+
+
+def _track_update(cache_dir: str, explosions=None, opps=(), frames: dict | None = None, now=None) -> dict:
+    """Log new predictions, score matured ones on fresh closed candles, return the live record.
+    A bookkeeping problem never breaks a scan."""
+    from . import track
+    from .analysis import explosion as exm
+    from .analysis.signal_model import closed_bars
+    try:
+        if explosions:
+            m = exm.load_model()
+            if m is not None:
+                track.record_explosions(cache_dir, explosions, m.theta, m.horizon)
+        for o in opps:
+            track.record_signal(cache_dir, o, now)
+        if frames:
+            closed = {k: (closed_bars(v, now) if now is not None else v) for k, v in frames.items() if v is not None}
+            track.evaluate(cache_dir, closed)
+        return track.summary(cache_dir)
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 def explosion_model_summary() -> dict:
@@ -591,6 +624,7 @@ def explosion_dict(a, tz: ZoneInfo, now) -> dict:
         "tradeable": a.tradeable, "until": a.until.astimezone(tz).strftime("%H:%M"), "minutes_left": mins_left,
         "drivers": a.drivers, "events": a.events,
         "range_low": i.fmt(lo), "range_high": i.fmt(hi),
+        "data_issues": a.data_issues, "blocked": a.blocked, "ood": a.ood,
         "plan": {"buy_stop": i.fmt(p["buy_stop"]), "sell_stop": i.fmt(p["sell_stop"]),
                  "buy_sl": i.fmt(p["buy_sl"]), "sell_sl": i.fmt(p["sell_sl"]),
                  "buy_tp": i.fmt(p["buy_tp"]) if p["buy_tp"] else "", "sell_tp": i.fmt(p["sell_tp"]) if p["sell_tp"] else "",
@@ -616,7 +650,10 @@ def scan_explosions(cache_dir: str, balance: float = 10_000.0, risk_pct: float =
         s = Settings(balance=float(balance), risk_pct=float(risk_pct), cache_dir=cache_dir, workers=6,
                      offline=bool(offline))
         os.makedirs(cache_dir, exist_ok=True)
-        alerts, errors, now = xp.scan(s, None if assets in (None, "", "all") else assets, progress=progress)
+        frames: dict = {}
+        alerts, errors, now = xp.scan(s, None if assets in (None, "", "all") else assets, progress=progress,
+                                      collect=frames)
+        track_info = _track_update(cache_dir, explosions=alerts, frames=frames)
         if not alerts:
             return json.dumps({"ok": False, "error": "Sem dados de mercado. Verifique a internet.",
                                "detail": "; ".join(f"{k}: {v}" for k, v in list(errors.items())[:6])},
@@ -633,6 +670,7 @@ def scan_explosions(cache_dir: str, balance: float = 10_000.0, risk_pct: float =
             "next_update": nxt.strftime("%H:%M"),
             "items": [explosion_dict(a, tz, now) for a in alerts],
             "model": explosion_model_summary(),
+            "track": track_info,
             "data_issues": [f"{k}: {v}" for k, v in errors.items()][:6],
             "elapsed_s": round(time.time() - t0, 1),
         }, ensure_ascii=False, default=str)

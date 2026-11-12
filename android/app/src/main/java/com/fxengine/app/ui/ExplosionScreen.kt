@@ -127,6 +127,7 @@ fun ExplosionContent(st: ExplosionState, onScan: () -> Unit, onOpenAsset: (Strin
                     }
                 }
             }
+            r.track?.let { t -> item { TrackCard(t, showSignals = false) } }
             r.model?.let { m -> item { ExplosionValidationCard(m) } }
             if (r.dataIssues.isNotEmpty()) {
                 item { SectionCard("Falhas de dados", accent = Fx.Warn) { Bullets(r.dataIssues, Fx.Warn, 3) } }
@@ -272,6 +273,7 @@ fun ExplosionCard(x: ExplosionItem, accConf: Double? = null, onClick: () -> Unit
             x.drivers.take(2).forEach {
                 Text("• $it", color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp)
             }
+            DataWarnings(x)
             if (x.events.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Text("Agenda: ${x.events.joinToString(" · ")}", color = Fx.Warn, fontSize = 12.sp)
@@ -339,6 +341,9 @@ fun ExplosionDetail(x: ExplosionItem, m: ExplosionModelInfo?, onOpenAsset: (Stri
                     color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
                 )
             }
+        }
+        if (x.blocked || x.dataIssues.isNotEmpty() || x.ood.isNotEmpty()) {
+            SectionCard("Qualidade dos dados", accent = if (x.blocked) Fx.Sell else Fx.Warn) { DataWarnings(x) }
         }
         if (x.drivers.isNotEmpty()) SectionCard("O que o modelo está vendo") { Bullets(x.drivers, Fx.Warn, 6) }
         if (x.events.isNotEmpty()) {
@@ -438,5 +443,19 @@ fun ExplosionValidationCard(m: ExplosionModelInfo) {
                     "não como entrada automática."),
             color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
         )
+    }
+}
+
+@Composable
+private fun DataWarnings(x: ExplosionItem) {
+    if (x.blocked) {
+        Text("⚠ Dados suspeitos: alerta suspenso — ${x.dataIssues.firstOrNull() ?: ""}",
+            color = Fx.Sell, fontSize = 12.sp, lineHeight = 16.sp)
+    } else if (x.dataIssues.isNotEmpty()) {
+        Text("⚠ ${x.dataIssues.first()}", color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp)
+    }
+    if (x.ood.isNotEmpty()) {
+        Text("Situação rara no histórico (${x.ood.joinToString(", ")}): leitura menos confiável",
+            color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp)
     }
 }

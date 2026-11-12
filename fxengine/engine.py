@@ -11,6 +11,7 @@ from . import sessions
 from . import breakouts as bk_mod
 from .analysis import edge as edge_mod
 from .analysis import signal_model as sig_mod
+from .data import quality
 from .analysis import quant as quant_mod
 from .analysis import strength as strength_mod
 from .analysis import technical as tech_mod
@@ -57,6 +58,8 @@ class Opportunity:
     day: dict = field(default_factory=dict)          # daily-range context (ADR used, move today, ...)
     breakouts: list = field(default_factory=list)    # breakouts detected on this instrument now
     signal: sig_mod.SignalEval | None = None         # calibrated historical model reading (if loaded)
+    quality: quality.DataCheck | None = None         # data-quality findings for this instrument
+    explosion: dict | None = None                    # validated explosion detector reading (next hours)
 
     @property
     def symbol(self) -> str:
@@ -83,6 +86,7 @@ class ScanResult:
     errors: dict[str, str]
     settings: Settings
     correlations: dict[str, float] = field(default_factory=dict)
+    h1: dict = field(default_factory=dict)          # H1 frames per instrument (live record scoring)
 
     @property
     def top(self) -> Opportunity | None:
@@ -97,7 +101,8 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
                        sess: sessions.SessionState, s: Settings, prices: dict[str, float],
                        now: datetime | None = None, events: list | None = None,
                        bk_model=None, sig_model: sig_mod.SignalModel | None = None,
-                       strength_closed: strength_mod.StrengthResult | None = None) -> Opportunity | None:
+                       strength_closed: strength_mod.StrengthResult | None = None,
+                       exp_model=None, exp_strength: tuple | None = None) -> Opportunity | None:
     inst, f, px = data.inst, data.frames, data.price
     tech = tech_mod.analyze(f, px, s.tf_weights)
     if "H1" not in tech.views or "M15" not in tech.views:
@@ -244,6 +249,12 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
         gates.append(f"histórico desfavorável: expectativa {sig.ev_r:+.2f}R, fora dos "
                      f"{q * 100:.0f}% melhores sinais")
 
+    # data quality: a suspicious feed must never produce a trade
+    dq = data_quality(data, now, sess, atr_d1)
+    if dq.blocked:
+        gates.append("dados suspeitos: " + next(i for i in dq.issues))
+    ood = quality.out_of_range(sig.raw_feats, model.info.get("feature_ranges", {})) if sig is not None else []
+
     # ------------------------------------------------------------------ narrative
     f_reasons, f_warns = fund.narrative(inst.symbol, d)
     reasons = list(tech.reasons) + t_reasons
@@ -282,7 +293,64 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
                       gates, reasons, warnings, data.notes)
     opp.executable = not gates and score >= s.min_score
     opp.day, opp.breakouts, opp.signal = day, bks, sig
+    opp.explosion = explosion_reading(data, now, exp_model, exp_strength)
+    xr = opp.explosion
+    if xr and xr["alert"] and not dq.blocked:
+        side = "alta" if xr["p_up"] >= 0.5 else "baixa"
+        txt = (f"explosão provável nas próximas {xr['horizon']} h ({xr['p'] * 100:.0f}%, nível {xr['level']}; "
+               f"movimento típico ≈ {inst.pips(xr['move']):.0f} pips)")
+        if xr["conf"] and (1 if xr["p_up"] >= 0.5 else -1) != d:
+            warnings.append(txt + f" com viés para o lado oposto ({side} {max(xr['p_up'], 1 - xr['p_up']) * 100:.0f}%)")
+        elif xr["conf"]:
+            reasons.append(txt + f" e viés do mesmo lado ({side} {max(xr['p_up'], 1 - xr['p_up']) * 100:.0f}%)")
+        else:
+            warnings.append(txt + ": volatilidade alta à frente, direção indefinida")
+    opp.quality = dq
+    for issue in dq.issues:
+        if f"dados suspeitos: {issue}" not in opp.gates:
+            opp.warnings.append(f"qualidade dos dados: {issue}")
+    if ood:
+        opp.warnings.append(f"situação rara no histórico ({', '.join(ood)}): probabilidade menos confiável")
     return opp
+
+
+def explosion_reading(data: InstrumentData, now, m, pts: tuple | None) -> dict | None:
+    """Validated explosion detector on this instrument (same features as the Explosões tab)."""
+    if m is None:
+        return None
+    from .analysis import explosion as ex_mod
+    inst = data.inst
+    try:
+        h1 = sig_mod.closed_bars(data.frames.get("H1"), now)
+        pts = pts or (None, None, None)
+        sc = (lambda st: st.pair_score(inst.base, inst.quote) if st is not None else 0.0)  # noqa: E731
+        ff = ex_mod.feature_frame(h1.iloc[-3000:], inst.is_metal, m.horizon, sc(pts[0]),
+                                  {"4": sc(pts[1]), "24": sc(pts[2])})
+        row = ff.iloc[-1]
+        feats = {k: float(row[k]) for k in ff.columns if np.isfinite(row[k])}
+        adr = float(row["adr"])
+        if not np.isfinite(adr) or adr <= 0:
+            return None
+        p = m.prob(feats)
+        pu = m.p_up(feats) if m.direction else 0.5
+        move = float(m.move_q.get("alert_median" if p >= m.alert_p else "all_median", m.theta)) * adr
+        return {"p": p, "level": m.level(p), "alert": p >= m.alert_p, "p_up": pu,
+                "conf": bool(m.direction and m.direction_confident(pu)), "move": move, "adr": adr,
+                "horizon": m.horizon}
+    except Exception:  # noqa: BLE001 - context only
+        return None
+
+
+def data_quality(data: InstrumentData, now, sess, adr: float | None) -> quality.DataCheck:
+    """Feed checks before any model reads the data (fxengine/data/quality.py)."""
+    inst = data.inst
+    market_open = sess.metals_open if inst.is_metal else sess.fx_open
+    h1 = sig_mod.closed_bars(data.frames.get("H1"), now)
+    dq = quality.check_h1(h1, now, market_open)
+    if h1 is not None and len(h1):
+        quality.check_quote(data.bid, data.ask, float(h1.c.iloc[-1]), adr,
+                            typical_spread_pips(inst.symbol) * inst.pip, dq)
+    return dq
 
 
 def _closed_strength(fx_h1: dict, met_h1: dict, now) -> strength_mod.StrengthResult:
@@ -347,6 +415,10 @@ class Engine:
         prices = {s: d.price for s, d in data.items()}
         bk_model = bk_mod.load_model(bk_mod.MODEL_PATHS.get(self.s.breakout_plan, bk_mod.MODEL_PATH))
         sig_model = sig_mod.load_model() if self.s.use_edge else None
+        from .analysis import explosion as ex_mod
+        from .explosions import _strength_points
+        exp_model = ex_mod.load_model()
+        exp_pts = _strength_points(data, now) if exp_model is not None else None
 
         opps = []
         for k, inst in enumerate(targets):
@@ -356,7 +428,7 @@ class Engine:
             try:
                 o = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
                                        now=now, events=ctx.events, bk_model=bk_model, sig_model=sig_model,
-                                       strength_closed=st_closed)
+                                       strength_closed=st_closed, exp_model=exp_model, exp_strength=exp_pts)
             except Exception as e:  # noqa: BLE001 - isolate per-instrument failures
                 errors[inst.symbol] = f"erro na análise: {e}"
                 continue
@@ -366,7 +438,8 @@ class Engine:
         best = next((o for o in opps if o.executable), None)
         corr = _correlations(best or opps[0], opps, data) if opps else {}
         step(100, "Concluído")
-        return ScanResult(now, sess, opps, best, strength, fmodel.macro, ctx, errors, self.s, corr)
+        return ScanResult(now, sess, opps, best, strength, fmodel.macro, ctx, errors, self.s, corr,
+                          {k: v.frames.get("H1") for k, v in data.items()})
 
     # ------------------------------------------------------------------ single instrument
     def scan_asset(self, symbol: str, progress=None) -> "AssetResult":
@@ -400,9 +473,13 @@ class Engine:
         prices = {k: v.price for k, v in rest.items()}
         bk_model = bk_mod.load_model(bk_mod.MODEL_PATHS.get(self.s.breakout_plan, bk_mod.MODEL_PATH))
         sig_model = sig_mod.load_model() if self.s.use_edge else None
+        from .analysis import explosion as ex_mod
+        from .explosions import _strength_points
+        exp_model = ex_mod.load_model()
+        exp_pts = _strength_points(rest, now) if exp_model is not None else None
         opp = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
                                  now=now, events=ctx.events, bk_model=bk_model, sig_model=sig_model,
-                                 strength_closed=st_closed)
+                                 strength_closed=st_closed, exp_model=exp_model, exp_strength=exp_pts)
         step(100, "Concluído")
         return AssetResult(now, sess, inst, data[inst.symbol], opp, strength, fmodel, ctx, errors, self.s)
 

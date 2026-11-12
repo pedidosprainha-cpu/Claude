@@ -223,6 +223,15 @@ fun OpportunityDetail(o: Opportunity, referenceOnly: Boolean, showActions: Boole
                 else -> PlanRow("Alvo", o.tp1, "${o.tp1Pips.f(1)} pips · ${o.rr1.f()}R · ${o.exitRule}$timeStop", Fx.Buy)
             }
             PlanRow("Lote", o.lots.f(2), "risco ${money(o.riskAmount)} · spread ${o.spreadPips.f(1)} pips")
+            o.explosion?.let { x ->
+                val against = x.conf && ((x.side == "alta") != o.isBuy)
+                PlanRow(
+                    "Explosão ${x.horizon} h", "${(x.p * 100).toInt()}% · ${x.level}",
+                    "movimento típico ≈ ${x.movePips.f(0)} pips · se explodir: ${x.side} ${(x.pSide * 100).toInt()}%" +
+                        (if (x.conf) " (alta confiança)" else "") + (if (against) " · CONTRA o lado da análise" else ""),
+                    when { against -> Fx.Sell; x.alert -> Fx.Warn; else -> Fx.Text },
+                )
+            }
             o.edge?.let { e ->
                 val ev = "${if (e.expR >= 0) "+" else ""}${e.expR.f()}R"
                 if (e.fromModel) {
@@ -357,6 +366,45 @@ fun SignalModelCard(m: com.fxengine.app.data.SignalModelInfo) {
                     "melhores sinais fica perto de zero. Use risco pequeno."
             },
             color = Fx.Warn, fontSize = 12.sp, lineHeight = 16.sp,
+        )
+    }
+}
+
+/** The app's own predictions scored on what really happened (fxengine/track.py). */
+@Composable
+fun TrackCard(t: com.fxengine.app.data.TrackInfo, showExplosions: Boolean = true, showSignals: Boolean = true) {
+    fun p(v: Double?) = v?.let { "${(it * 100).toInt()}%" } ?: "—"
+    SectionCard("Placar ao vivo" + (t.since?.let { " (desde ${it.substring(8, 10)}/${it.substring(5, 7)})" } ?: "")) {
+        Text(
+            "O app guarda as próprias previsões neste aparelho e confere depois nos candles reais. É a prova " +
+                "fora do histórico: se o acerto ao vivo ficar bem abaixo do validado, desconfie.",
+            color = Fx.Muted, fontSize = 12.sp, lineHeight = 16.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        if (showExplosions) {
+            PlanRow(
+                "Explosões", if (t.alerts == 0) "aguardando" else "${p(t.alertHit)} dos alertas",
+                "${t.alerts} alertas conferidos · horas sem alerta: ${p(t.otherHit)} em ${t.others}" +
+                    (t.pMeanAlert?.let { " · previsto ${p(it)}" } ?: ""),
+                if ((t.alertHit ?: 0.0) >= (t.otherHit ?: 1.0)) Fx.Buy else Fx.Warn,
+            )
+            if (t.dirN > 0) {
+                PlanRow("Direção", "${p(t.dirHit)} de acerto",
+                    "${t.dirN} explosões em alerta · alta confiança: ${p(t.dirConfHit)} em ${t.dirConfN}")
+            }
+        }
+        if (showSignals) {
+            PlanRow(
+                "Sinais executáveis",
+                if (t.signalN > 0) "${t.signalMeanR?.let { (if (it >= 0) "+" else "") + it.f(2) } ?: "—"}R" else "aguardando",
+                if (t.signalN > 0) "${t.signalN} conferidos · ${p(t.signalWin)} no lucro" else "nenhum conferido ainda",
+            )
+        }
+        val n = t.alerts + t.signalN
+        Text(
+            (if (n < 30) "Amostra ainda pequena: conclusões só depois de dezenas de casos. " else "") +
+                "${t.pending} previsões aguardando o prazo vencer.",
+            color = Fx.Muted, fontSize = 11.sp,
         )
     }
 }

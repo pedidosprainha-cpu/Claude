@@ -74,6 +74,22 @@ amostra em cada bloco, trades a mercado no lado previsto avaliados com `signal_e
 
 Resultados em `research/RESULTADOS_EXPLOSAO_DIRECAO.json`.
 
+## Combinação dos modelos
+
+```bash
+python3 research/ensemble_oos.py       # ~20 min → research/data/ensemble_oos.pkl (previsões fora da amostra)
+python3 research/train_ensemble.py     # políticas pré-registradas → research/RESULTADOS_COMBINACAO.json
+python3 research/feature_ranges.py     # faixas das entradas vistas no treino (alerta "fora do histórico")
+```
+
+| política (melhor geometria) | walk-forward média / pior bloco | blocos positivos | teste (jul–nov/2026) |
+|---|---|---|---|
+| explosão + direção + sinal concordam (s20\|tr10) | −0,072R / −0,101R | 0/6 | +0,126R (542) |
+| sinal principal top 2% (modelo atual) | −0,025R / −0,208R | 2/6 | +0,035R (205) |
+
+Nenhuma das 30 combinações passou na regra (média > 0, ≥ 75% dos blocos positivos, pior bloco
+> −0,05R).
+
 ## Rompimentos (aba Rompimentos)
 
 ```bash
