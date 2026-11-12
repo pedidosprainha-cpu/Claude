@@ -315,6 +315,15 @@ fun OpportunityRow(rank: Int, o: Opportunity, onClick: () -> Unit) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
+            o.rankEv?.let { ev ->
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("${if (ev >= 0) "+" else ""}${ev.f(2)}R", color = if (ev >= 0) Fx.Buy else Fx.Warn,
+                        fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("expectativa", color = Fx.Muted, fontSize = 10.sp)
+                    (o.rankP ?: o.edge?.p)?.let { Text("${(it * 100).toInt()}% lucro", color = Fx.Muted, fontSize = 10.sp) }
+                }
+                Spacer(Modifier.width(8.dp))
+            }
             GradeBadge(o.grade, o.score, 46)
         }
     }

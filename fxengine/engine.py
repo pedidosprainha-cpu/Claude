@@ -10,6 +10,7 @@ import numpy as np
 from . import sessions
 from . import breakouts as bk_mod
 from .analysis import edge as edge_mod
+from .analysis import macro_features as mf_mod
 from .analysis import signal_model as sig_mod
 from .data import quality
 from .analysis import quant as quant_mod
@@ -60,6 +61,9 @@ class Opportunity:
     signal: sig_mod.SignalEval | None = None         # calibrated historical model reading (if loaded)
     quality: quality.DataCheck | None = None         # data-quality findings for this instrument
     explosion: dict | None = None                    # validated explosion detector reading (next hours)
+    rank_p: float | None = None                      # ranking model: P(the market entry ends in profit)
+    rank_ev: float | None = None                     # ranking key: expected R of this market entry
+    model_dir: bool = False                          # side chosen by the validated models
 
     @property
     def symbol(self) -> str:
@@ -102,7 +106,8 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
                        now: datetime | None = None, events: list | None = None,
                        bk_model=None, sig_model: sig_mod.SignalModel | None = None,
                        strength_closed: strength_mod.StrengthResult | None = None,
-                       exp_model=None, exp_strength: tuple | None = None) -> Opportunity | None:
+                       exp_model=None, exp_strength: tuple | None = None,
+                       macro_ctx: tuple | None = None, ranker=None) -> Opportunity | None:
     inst, f, px = data.inst, data.frames, data.price
     tech = tech_mod.analyze(f, px, s.tf_weights)
     if "H1" not in tech.views or "M15" not in tech.views:
@@ -114,6 +119,39 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     comps = {"technical": tech.score, "quant": quant.score, "strength": st_score, "fundamental": fund.score}
     composite = sum(s.weights[k] * comps[k] for k in comps)
     d = int(np.sign(composite)) or (int(np.sign(tech.score)) or 1)
+    now = now or data.quote_ts
+    model = sig_model if s.use_edge else None
+
+    # ---- validated models first: they choose the side (best expected R for a market entry)
+    sig, xr, rank_p, rank_ev, model_dir = None, None, None, None, False
+    if model is not None:
+        try:
+            h1c = sig_mod.closed_bars(f["H1"], now)
+            st_model = (strength_closed or strength).pair_score(inst.base, inst.quote)   # as in the replay
+            spread_t = typical_spread_pips(inst.symbol) * inst.pip
+            sig = sig_mod.evaluate(model, h1c, st_model, spread_t, inst.is_metal, d)
+            xr = explosion_reading(data, now, exp_model, exp_strength)
+            macro = _macro_for(inst, macro_ctx)
+            if sig is not None:
+                cands = {}
+                for dd in (1, -1):
+                    raw_d = sig.raw_ev if dd == d else sig.raw_ev_other
+                    raw_o = sig.raw_ev_other if dd == d else sig.raw_ev
+                    if ranker is not None and xr is not None:
+                        from .analysis import ranker as rk_mod
+                        cands[dd] = ranker.score(rk_mod.candidate(dd, raw_d, raw_o, xr["z"], xr["dir_z"], macro))
+                    else:
+                        cands[dd] = (None, model.calibrated(raw_d, 0.0)[1])
+                best_d = max(cands, key=lambda k: cands[k][1])
+                if best_d != d:
+                    d = best_d
+                    sig = sig_mod.evaluate(model, h1c, st_model, spread_t, inst.is_metal, d)
+                rank_p, rank_ev = cands[d]
+                if ranker is None:
+                    rank_ev = sig.ev_r if sig is not None else rank_ev
+                model_dir = True
+        except Exception:  # noqa: BLE001 - models are an extra layer; never break the scan
+            sig = None
 
     timing_mult, timing_notes, t_reasons, t_warns = (tech.timing_mult, tech.timing_notes, [], [])
     if d != (int(np.sign(tech.score)) or 1):
@@ -122,21 +160,12 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     v15, v1 = tech.views["M15"], tech.views["H1"]
     atr_d1 = tech.views["D1"].atr if "D1" in tech.views else 4 * v1.atr
     levels = level_map(f, px, inst.round_step, v1.atr)
-    now = now or data.quote_ts
-    model = sig_model if s.use_edge else None
     plan = build_plan(inst, d, data.bid, data.ask, f, v15.atr, v1.atr, atr_d1, levels,
                       s.balance, s.risk_pct, prices, s.account_ccy,
                       geometry=model.geometry if model is not None else None)
 
-    ed, sig = None, None
-    if model is not None:
-        try:
-            st_model = (strength_closed or strength).pair_score(inst.base, inst.quote)   # as in the replay
-            sig = sig_mod.evaluate(model, sig_mod.closed_bars(f["H1"], now), st_model,
-                                   typical_spread_pips(inst.symbol) * inst.pip, inst.is_metal, d)
-        except Exception:  # noqa: BLE001 - the model is an extra layer; never break the scan
-            sig = None
-    elif s.use_edge:
+    ed = None
+    if model is None and s.use_edge:
         ed = edge_mod.evaluate(f["H1"], d, plan.sl_atr_h1, plan.tp1_atr_h1, data.ask - data.bid,
                                s.edge_max_hold_bars, s.edge_prior_strength)
 
@@ -238,7 +267,7 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
         gates.append("evento de alto impacto na janela de bloqueio")
     if plan.spread_ratio > s.max_spread_to_sl:
         gates.append(f"spread {plan.spread_ratio * 100:.0f}% do stop (> {s.max_spread_to_sl * 100:.0f}%)")
-    if tech.score * d < -25:
+    if tech.score * d < -25 and not model_dir:
         gates.append("gráfico (técnico MTF) contra a direção")
     if plan.rr1 < s.min_rr_tp1:
         gates.append(f"R:R TP1 {plan.rr1:.2f} < {s.min_rr_tp1}")
@@ -291,10 +320,13 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     opp = Opportunity(inst, d, px, data.bid, data.ask, data.quote_ts, data.quote_source, tech, quant, fund,
                       st_score, comps, float(composite), mult, score, grade(score), plan, ed, levels,
                       gates, reasons, warnings, data.notes)
-    opp.executable = not gates and score >= s.min_score
+    opp.executable = not gates and (sig.passes if sig is not None else score >= s.min_score)
     opp.day, opp.breakouts, opp.signal = day, bks, sig
-    opp.explosion = explosion_reading(data, now, exp_model, exp_strength)
+    opp.explosion = xr if xr is not None else explosion_reading(data, now, exp_model, exp_strength)
     xr = opp.explosion
+    opp.rank_p, opp.rank_ev, opp.model_dir = rank_p, rank_ev, model_dir
+    if model_dir and tech.score * d < -25:
+        opp.warnings.append("o lado de maior expectativa no histórico vai contra a tendência do gráfico (MTF)")
     if xr and xr["alert"] and not dq.blocked:
         side = "alta" if xr["p_up"] >= 0.5 else "baixa"
         txt = (f"explosão provável nas próximas {xr['horizon']} h ({xr['p'] * 100:.0f}%, nível {xr['level']}; "
@@ -312,6 +344,39 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
     if ood:
         opp.warnings.append(f"situação rara no histórico ({', '.join(ood)}): probabilidade menos confiável")
     return opp
+
+
+OPERATIONAL = ("mercado fechado", "fora do horário", "evento de alto impacto", "spread ", "dados suspeitos")
+
+
+def rank_key(o: Opportunity) -> tuple:
+    """Best market entry first: instruments that cannot be traded now go last; among the rest,
+    the validated expected R of the chosen side (heuristic score only without the models)."""
+    blocked = any(g.startswith(OPERATIONAL) for g in o.gates)
+    key = o.rank_ev if o.rank_ev is not None else o.score / 1000.0
+    return (blocked, -key)
+
+
+def macro_context(ctx: MarketContext, now) -> tuple | None:
+    """(last completed macro day, rates, COT) for fxengine/analysis/macro_features.py."""
+    try:
+        import pandas as pd
+        table = mf_mod.daily_table(ctx.macro or {})
+        day_cut = pd.Timestamp(now).tz_convert("UTC").normalize() - pd.Timedelta(days=1)
+        rows = table[table.index <= day_cut]
+        day = rows.iloc[-1] if len(rows) else None
+        rates = {c: (r.rate, r.change_6m) for c, r in (ctx.rates or {}).items()}
+        cot = {a: c.net_pct_oi for a, c in (ctx.cot or {}).items()}
+        return day, rates, cot
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _macro_for(inst: Instrument, macro_ctx: tuple | None) -> dict | None:
+    if not macro_ctx:
+        return None
+    day, rates, cot = macro_ctx
+    return mf_mod.pair_features(inst.base, inst.quote, day, rates, cot)
 
 
 def explosion_reading(data: InstrumentData, now, m, pts: tuple | None) -> dict | None:
@@ -336,7 +401,7 @@ def explosion_reading(data: InstrumentData, now, m, pts: tuple | None) -> dict |
         move = float(m.move_q.get("alert_median" if p >= m.alert_p else "all_median", m.theta)) * adr
         return {"p": p, "level": m.level(p), "alert": p >= m.alert_p, "p_up": pu,
                 "conf": bool(m.direction and m.direction_confident(pu)), "move": move, "adr": adr,
-                "horizon": m.horizon}
+                "horizon": m.horizon, "z": m.logit(feats), "dir_z": m.dir_logit(feats)}
     except Exception:  # noqa: BLE001 - context only
         return None
 
@@ -419,6 +484,9 @@ class Engine:
         from .explosions import _strength_points
         exp_model = ex_mod.load_model()
         exp_pts = _strength_points(data, now) if exp_model is not None else None
+        from .analysis import ranker as rk_mod
+        ranker = rk_mod.load() if self.s.use_edge else None
+        mctx = macro_context(ctx, now)
 
         opps = []
         for k, inst in enumerate(targets):
@@ -428,13 +496,14 @@ class Engine:
             try:
                 o = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
                                        now=now, events=ctx.events, bk_model=bk_model, sig_model=sig_model,
-                                       strength_closed=st_closed, exp_model=exp_model, exp_strength=exp_pts)
+                                       strength_closed=st_closed, exp_model=exp_model, exp_strength=exp_pts,
+                                       macro_ctx=mctx, ranker=ranker)
             except Exception as e:  # noqa: BLE001 - isolate per-instrument failures
                 errors[inst.symbol] = f"erro na análise: {e}"
                 continue
             if o is not None:
                 opps.append(o)
-        opps.sort(key=lambda o: o.score, reverse=True)
+        opps.sort(key=rank_key)
         best = next((o for o in opps if o.executable), None)
         corr = _correlations(best or opps[0], opps, data) if opps else {}
         step(100, "Concluído")
@@ -477,9 +546,13 @@ class Engine:
         from .explosions import _strength_points
         exp_model = ex_mod.load_model()
         exp_pts = _strength_points(rest, now) if exp_model is not None else None
+        from .analysis import ranker as rk_mod
+        ranker = rk_mod.load() if self.s.use_edge else None
+        mctx = macro_context(ctx, now)
         opp = analyze_instrument(data[inst.symbol], strength, fmodel, sess, self.s, prices,
                                  now=now, events=ctx.events, bk_model=bk_model, sig_model=sig_model,
-                                 strength_closed=st_closed, exp_model=exp_model, exp_strength=exp_pts)
+                                 strength_closed=st_closed, exp_model=exp_model, exp_strength=exp_pts,
+                                       macro_ctx=mctx, ranker=ranker)
         step(100, "Concluído")
         return AssetResult(now, sess, inst, data[inst.symbol], opp, strength, fmodel, ctx, errors, self.s)
 

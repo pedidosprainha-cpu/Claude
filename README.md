@@ -204,6 +204,32 @@ andar ≥ 0,5× a amplitude diária média (ADR), para qualquer lado, em até 4 
 - Com o monitor de rompimentos ligado, o app avisa a cada hora cheia quando um ativo entra em
   alerta alto ou extremo (ajuste "Alertas de explosão").
 
+### Ranking: o 1º colocado é a melhor entrada a mercado agora
+
+A cada análise o motor avalia todos os níveis de cada ativo: micro (timing M5/M15, spread,
+liquidez da sessão, qualidade dos dados), meso (H1/H4: tendência, estrutura, níveis,
+rompimentos, explosão nas próximas horas) e macro (D1/W1, força relativa das 8 moedas,
+juros, carry, COT, VIX, juros dos EUA, dólar, commodities, agenda). Para cada ativo, o
+**lado** é o de maior expectativa no modelo validado, e o **ranking** é ordenado por essa
+expectativa (R esperado da entrada a mercado com o plano do app). Ativos que não podem ser
+operados agora (mercado fechado, evento de alto impacto, spread, dados suspeitos) vão para o
+fim. Executar continua exigindo os 2% melhores sinais e nenhuma trava.
+
+Estudo cross-sectional (`research/ranking_study.py`): em cada hora do histórico, os 32 ativos
+× 2 lados competem; mede-se o R real do 1º colocado.
+
+| 1º colocado de cada hora | walk-forward (média de 5 blocos) | teste (jul–nov/2026) |
+|---|---|---|
+| ativo aleatório | −0,078R | −0,071R |
+| **expectativa do modelo validado (usado no app)** | **−0,021R** | **+0,149R** (54% no lucro) |
+| ranqueador com as saídas dos modelos | +0,003R | +0,050R |
+| ranqueador "micro → macro" (+ VIX, juros, dólar, commodities, carry, COT) | +0,007R | +0,260R |
+
+Ordenar pela expectativa validada põe no topo uma entrada muito melhor que a média (no teste,
+o 1º superou a mediana dos ativos em 55% das horas). Os ranqueadores com mais camadas ficaram
+à frente em só 3 de 5 períodos (a regra pré-definida exigia 4), então não foram adotados; o
+macro segue como contexto e trava.
+
 ### Confiabilidade: qualidade dos dados, paridade e placar ao vivo
 
 - **Qualidade dos dados** (`fxengine/data/quality.py`), antes de qualquer modelo: candles H1

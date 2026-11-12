@@ -245,6 +245,7 @@ class SignalEval:
     other_ev_r: float     # calibrated expected R of the opposite direction
     feats: dict
     raw_feats: dict = field(default_factory=dict)   # direction-free inputs (compared with training ranges)
+    raw_ev_other: float = 0.0                        # raw model score of the opposite direction
 
 
 def evaluate(model: SignalModel | None, h1_closed: pd.DataFrame, strength_score: float, spread: float,
@@ -261,7 +262,7 @@ def evaluate(model: SignalModel | None, h1_closed: pd.DataFrame, strength_score:
         out[dd] = (p, ev, rev, feats)
     p, ev, rev, feats = out[d]
     raw = {f: float(row[f]) for f in FEATURES if np.isfinite(row[f])}
-    return SignalEval(d, p, ev, rev, model.grade(rev), rev >= model.ev_exec, out[-d][1], feats, raw)
+    return SignalEval(d, p, ev, rev, model.grade(rev), rev >= model.ev_exec, out[-d][1], feats, raw, out[-d][2])
 
 
 EXIT_TEXT = {"trail": "stop móvel após +1R", "be": "stop na entrada após +1R", "tp": "alvo fixo",

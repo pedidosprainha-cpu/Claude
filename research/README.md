@@ -90,6 +90,25 @@ python3 research/feature_ranges.py     # faixas das entradas vistas no treino (a
 Nenhuma das 30 combinações passou na regra (média > 0, ≥ 75% dos blocos positivos, pior bloco
 > −0,05R).
 
+## Ranking (o 1º colocado é a melhor entrada?)
+
+```bash
+python3 research/ranking_study.py   # usa ensemble_oos.pkl + histórico macro (Yahoo, BIS, CFTC) → RESULTADOS_RANKING.json
+```
+
+Em cada hora, 32 ativos × 2 lados; R real do 1º colocado (plano do app, com spread). Adoção
+pré-registrada: média maior que o modelo atual nos blocos 2..6 e vitória em ≥ 4 de 5 blocos.
+
+| método | top-1 por bloco (2..6) | média | teste |
+|---|---|---|---|
+| aleatório | −0,10 −0,12 −0,05 −0,04 −0,09 | −0,078R | −0,071R |
+| sinal validado (adotado) | +0,02 +0,05 −0,10 −0,15 +0,07 | −0,021R | +0,149R |
+| meta-ranqueador (modelos) | +0,06 +0,04 −0,04 −0,03 −0,01 | +0,003R | +0,050R |
+| meta-ranqueador + macro | −0,05 +0,10 +0,01 −0,07 +0,04 | +0,007R | +0,260R |
+
+Os dois meta-ranqueadores venceram em 3/5 blocos: não adotados (o `ranker_model.json` só é
+gravado quando a regra aprova; o motor já sabe usá-lo).
+
 ## Rompimentos (aba Rompimentos)
 
 ```bash

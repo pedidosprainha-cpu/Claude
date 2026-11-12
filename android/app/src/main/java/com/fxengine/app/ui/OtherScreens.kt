@@ -78,7 +78,11 @@ fun RankingScreen(result: ScanResult?, onOpenAsset: (String) -> Unit = {}) {
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item {
-            ScreenTitle("Ranking", "${result.ranking.size} ativos · ${result.weekday} ${result.timestamp}")
+            ScreenTitle(
+                "Ranking",
+                "Melhor entrada a mercado primeiro (expectativa validada) · ${result.ranking.size} ativos · " +
+                    "${result.weekday} ${result.timestamp}",
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !onlyExec, onClick = { onlyExec = false }, label = { Text("Todos") })
                 FilterChip(

@@ -14,8 +14,10 @@ def result():
 
 def test_scan_ranks_and_plans(result):
     assert len(result.opportunities) == 32
-    scores = [o.score for o in result.opportunities]
-    assert scores == sorted(scores, reverse=True)
+    from fxengine.engine import rank_key
+    keys = [rank_key(o) for o in result.opportunities]
+    assert keys == sorted(keys)                     # tradable first, then highest validated expected R
+    assert all(o.model_dir for o in result.opportunities if o.signal is not None)
     for o in result.opportunities:
         p = o.plan
         assert 0 <= o.score <= 100

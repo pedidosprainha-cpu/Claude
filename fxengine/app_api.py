@@ -115,6 +115,7 @@ def opp_dict(o: Opportunity, tz: ZoneInfo, min_score: float) -> dict:
         "tp1_basis": p.tp1_basis,
         "tp2_basis": p.tp2_basis,
         "invalidation": p.invalidation,
+        "rank_ev": _num(o.rank_ev, 3), "rank_p": _num(o.rank_p, 3), "model_dir": bool(o.model_dir),
         "edge": edge_dict(o),
         "explosion": None if not o.explosion else {
             "p": _num(o.explosion["p"], 3), "level": o.explosion["level"], "alert": bool(o.explosion["alert"]),

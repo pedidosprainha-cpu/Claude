@@ -223,6 +223,21 @@ class ExplosionModel:
     validated: bool
     info: dict = field(default_factory=dict)
 
+    def logit(self, feats: dict) -> float:
+        """Raw (uncalibrated) detector score, the input the ranking model was trained on."""
+        x = np.array([float(feats.get(f, 0.0)) for f in self.features], dtype=float)
+        return _gbm_logit(self.gbm, np.where(np.isfinite(x), x, 0.0))
+
+    def dir_logit(self, feats: dict) -> float:
+        """Raw symmetrised direction score (before calibration); 0 without a direction model."""
+        d = self.direction
+        if not d or d.get("type") != "gbm":
+            return 0.0
+        sv = np.array([float(feats.get(f, 0.0)) for f in d["signed"]], dtype=float)
+        cv = np.array([float(feats.get(f, 0.0)) for f in d["context"]], dtype=float)
+        sv, cv = np.where(np.isfinite(sv), sv, 0.0), np.where(np.isfinite(cv), cv, 0.0)
+        return (_gbm_logit(d["gbm"], np.r_[sv, cv]) - _gbm_logit(d["gbm"], np.r_[-sv, cv])) / 2
+
     def prob(self, feats: dict) -> float:
         x = np.array([float(feats.get(f, 0.0)) for f in self.features], dtype=float)
         x = np.where(np.isfinite(x), x, 0.0)
