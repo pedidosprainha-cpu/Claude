@@ -31,8 +31,11 @@ WARMUP_BARS = 1200          # H1 bars needed before the features are stable (EMA
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "signal_model.json")
 
 
-def _clip(s: pd.Series, lo: float, hi: float) -> pd.Series:
-    return s.replace([np.inf, -np.inf], np.nan).clip(lo, hi)
+def _clip(s, lo, hi):
+    v = np.asarray(s, dtype=float)
+    with np.errstate(invalid="ignore"):
+        v = np.clip(np.where(np.isfinite(v), v, np.nan), lo, hi)      # inf -> NaN, then clip (NaN stays)
+    return pd.Series(v, index=s.index)
 
 
 def feature_frame(h1: pd.DataFrame, strength=None, spread: float = 0.0, is_metal: bool = False) -> pd.DataFrame:
@@ -248,21 +251,28 @@ class SignalEval:
     raw_ev_other: float = 0.0                        # raw model score of the opposite direction
 
 
-def evaluate(model: SignalModel | None, h1_closed: pd.DataFrame, strength_score: float, spread: float,
-             is_metal: bool, d: int) -> SignalEval | None:
-    """Model reading for direction d on the closed H1 bars (last bar = the decision bar)."""
+def evaluate_both(model: SignalModel | None, h1_closed: pd.DataFrame, strength_score: float, spread: float,
+                  is_metal: bool) -> dict | None:
+    """Model reading for BOTH directions from one feature computation: {1: SignalEval, -1: SignalEval}."""
     if model is None or h1_closed is None or len(h1_closed) < WARMUP_BARS // 2:
         return None
     row = feature_frame(h1_closed.iloc[-3000:], strength_score, spread, is_metal).iloc[-1]
+    raw = {f: float(row[f]) for f in FEATURES if np.isfinite(row[f])}
     out = {}
-    for dd in (d, -d):
+    for dd in (1, -1):
         feats = oriented(row, dd)
         rev, rz = model.raw(feats)
         p, ev = model.calibrated(rev, rz)
         out[dd] = (p, ev, rev, feats)
-    p, ev, rev, feats = out[d]
-    raw = {f: float(row[f]) for f in FEATURES if np.isfinite(row[f])}
-    return SignalEval(d, p, ev, rev, model.grade(rev), rev >= model.ev_exec, out[-d][1], feats, raw, out[-d][2])
+    return {d: SignalEval(d, out[d][0], out[d][1], out[d][2], model.grade(out[d][2]), out[d][2] >= model.ev_exec,
+                          out[-d][1], out[d][3], raw, out[-d][2]) for d in (1, -1)}
+
+
+def evaluate(model: SignalModel | None, h1_closed: pd.DataFrame, strength_score: float, spread: float,
+             is_metal: bool, d: int) -> SignalEval | None:
+    """Model reading for direction d on the closed H1 bars (last bar = the decision bar)."""
+    both = evaluate_both(model, h1_closed, strength_score, spread, is_metal)
+    return None if both is None else both[d]
 
 
 EXIT_TEXT = {"trail": "stop móvel após +1R", "be": "stop na entrada após +1R", "tp": "alvo fixo",

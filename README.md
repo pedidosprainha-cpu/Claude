@@ -204,6 +204,32 @@ andar ≥ 0,5× a amplitude diária média (ADR), para qualquer lado, em até 4 
 - Com o monitor de rompimentos ligado, o app avisa a cada hora cheia quando um ativo entra em
   alerta alto ou extremo (ajuste "Alertas de explosão").
 
+### Desempenho e verificação
+
+Medido com as mesmas versões de numpy/pandas do APK (resultados idênticos antes e depois,
+conferidos campo a campo):
+
+| | antes | depois |
+|---|---|---|
+| cálculo da análise de todos os ativos | 15,4 s | 9,1 s |
+| cálculo das explosões | 4,6 s | 3,0 s |
+| dados baixados por análise completa | 31 MB | 5,6 MB |
+| análise de um ativo, ao vivo | 2,4–4,9 s | 1,8 s |
+
+- Histórico de candles incremental (`fxengine/data/provider.py`): o ano de H1, os 30 dias de
+  M15 e os 5 dias de M5 ficam guardados no aparelho; cada análise baixa só o trecho recente e
+  emenda (idêntico ao download completo, barra a barra; sem sobreposição ou com arquivo
+  corrompido, volta ao download completo).
+- Agenda, juros, COT, notícias e macro baixam em paralelo com os gráficos.
+- Indicadores (true range, RSI, cortes de valores, sazonalidade) reescritos em numpy/pandas
+  vetorizado com a mesma fórmula; análise técnica nas últimas 1.500 barras de cada timeframe
+  (o maior lookback é 250); features do modelo calculadas uma vez para os dois lados.
+- Verificação: `tests/test_contract.py` chama o motor exatamente como o app Kotlin (mesmas
+  funções e ordem de argumentos) e confere que toda chave lida pelas telas existe na
+  resposta; `tests/test_stress.py` simula internet caída, metade das fontes falhando e
+  mercado fechado (o motor sempre responde com JSON válido e nunca recomenda com mercado
+  fechado); `tests/test_incremental.py` cobre o cache de candles.
+
 ### Ranking: o 1º colocado é a melhor entrada a mercado agora
 
 A cada análise o motor avalia todos os níveis de cada ativo: micro (timing M5/M15, spread,

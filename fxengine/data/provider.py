@@ -12,6 +12,8 @@ is used and ratio-adjusted to the live spot quote (basis removal).
 """
 from __future__ import annotations
 
+import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -31,6 +33,11 @@ INTRADAY = {  # name: (yahoo interval, range, cache ttl seconds, pandas freq)
     "M15": ("15m", "30d", 45, "15min"),
     "H1": ("1h", "1y", 240, "1h"),
 }
+
+# Incremental downloads: (interval, full range) -> short range spliced onto the stored history.
+# The short ranges are the ones the breakout monitor already requests (shared HTTP cache).
+INCREMENTAL = {("1h", "1y"): "1mo", ("15m", "30d"): "5d", ("5m", "5d"): "1d"}
+RANGE_DAYS = {"1y": 366, "30d": 43, "5d": 8}     # calendar days Yahoo returns for these ranges
 
 # Light profile for the real-time breakout monitor (~70 KB per instrument per cycle,
 # H1 mostly served from cache): enough history for 48-bar M15 / 120-bar H1 ranges,
@@ -112,6 +119,45 @@ class Provider:
         self.s = settings
         self.http = Http(settings.cache_dir, timeout=settings.timeout)
 
+    # ------------------------------------------------------------------ candles
+    def candles(self, symbol: str, iv: str, rng: str, ttl: float) -> tuple[pd.DataFrame, dict]:
+        """Candles with an incremental local history: long ranges are downloaded in full only
+        once; later scans fetch a short recent range and splice it onto the stored history
+        (~8x less data per scan). Falls back to the full download whenever the pieces do not
+        overlap, the store is unreadable or the history is shorter than requested."""
+        short = INCREMENTAL.get((iv, rng))
+        store = self.s.cache_dir and os.path.join(self.s.cache_dir, "hist", f"{symbol}_{iv}.pkl".replace("=", "_")
+                                                  .replace("^", "_"))
+        if not short or not store:
+            return yahoo.candles(self.http, symbol, iv, rng, ttl=ttl)
+        span = RANGE_DAYS[rng]
+        hist = None
+        try:
+            if os.path.exists(store):
+                hist = pd.read_pickle(store)
+        except Exception:  # noqa: BLE001 - a broken store only costs one full download
+            hist = None
+        if hist is not None and len(hist) and hist.index[0] <= hist.index[-1] - pd.Timedelta(days=span * 0.6):
+            recent, meta = yahoo.candles(self.http, symbol, iv, short, ttl=ttl)
+            if len(recent) and recent.index[0] <= hist.index[-1]:            # pieces overlap: splice
+                df = pd.concat([hist[hist.index < recent.index[0]], recent])
+                df = df[df.index >= df.index[-1] - pd.Timedelta(days=span)]
+                self._save(store, df)
+                return df, meta
+        df, meta = yahoo.candles(self.http, symbol, iv, rng, ttl=ttl)
+        self._save(store, df)
+        return df, meta
+
+    @staticmethod
+    def _save(path: str, df: pd.DataFrame) -> None:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = f"{path}.{threading.get_ident()}.tmp"
+            df.to_pickle(tmp)
+            os.replace(tmp, path)
+        except Exception:  # noqa: BLE001 - the store is an optimisation only
+            pass
+
     # ------------------------------------------------------------------ instruments
     def load_instrument(self, inst: Instrument, now: datetime, spec: dict | None = None) -> InstrumentData:
         spec = spec or INTRADAY
@@ -119,7 +165,7 @@ class Provider:
         notes: list[str] = []
         raw, meta = {}, {}
         for name, (iv, rng, ttl, _) in spec.items():
-            raw[name], meta[name] = yahoo.candles(self.http, inst.yahoo, iv, rng, ttl=ttl)
+            raw[name], meta[name] = self.candles(inst.yahoo, iv, rng, ttl)
 
         q = None
         try:

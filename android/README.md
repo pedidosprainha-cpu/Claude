@@ -32,6 +32,10 @@ o trade ou o alerta daquele ativo e diz por quê. O cartão **Placar ao vivo** (
 Explosões) mostra o acerto real das previsões que o próprio app fez neste aparelho, conferidas
 nos candles depois do prazo.
 
+Consumo de dados: a primeira análise completa baixa ~31 MB (um ano de gráficos de 32 ativos);
+as seguintes ~5,6 MB, porque o histórico fica guardado no aparelho e só o trecho recente é
+baixado.
+
 A última análise fica salva (a geral e a do último ativo); se ela tiver mais de 5 minutos o app
 avisa para analisar de novo. Nas abas Rompimentos e Ranking, **Análise completa de …** abre a
 análise individual do ativo na aba Analisar.

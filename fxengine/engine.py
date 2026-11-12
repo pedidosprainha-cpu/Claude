@@ -2,6 +2,7 @@
 execution gates and rank opportunities for immediate market entry."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -129,7 +130,8 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
             h1c = sig_mod.closed_bars(f["H1"], now)
             st_model = (strength_closed or strength).pair_score(inst.base, inst.quote)   # as in the replay
             spread_t = typical_spread_pips(inst.symbol) * inst.pip
-            sig = sig_mod.evaluate(model, h1c, st_model, spread_t, inst.is_metal, d)
+            sigs = sig_mod.evaluate_both(model, h1c, st_model, spread_t, inst.is_metal)
+            sig = sigs[d] if sigs else None
             xr = explosion_reading(data, now, exp_model, exp_strength)
             macro = _macro_for(inst, macro_ctx)
             if sig is not None:
@@ -145,7 +147,7 @@ def analyze_instrument(data: InstrumentData, strength: strength_mod.StrengthResu
                 best_d = max(cands, key=lambda k: cands[k][1])
                 if best_d != d:
                     d = best_d
-                    sig = sig_mod.evaluate(model, h1c, st_model, spread_t, inst.is_metal, d)
+                    sig = sigs[d]                       # same features, other side: no recomputation
                 rank_p, rank_ev = cands[d]
                 if ranker is None:
                     rank_ev = sig.ev_r if sig is not None else rank_ev
@@ -464,11 +466,14 @@ class Engine:
         for i in FX_PAIRS:                      # strength meter always needs the full FX matrix
             need.setdefault(i.symbol, i)
         step(2, "Conectando às fontes de dados")
-        data, errors = self.provider.load_instruments(
-            list(need.values()), now,
-            progress=lambda k, n: step(3 + 52 * k / n, f"Preços ao vivo e gráficos {k}/{n}"))
-        step(56, "Juros, COT, agenda e manchetes")
-        ctx = self.provider.load_context(now)
+        # fundamentals/macro download in parallel with the instruments (independent sources)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            ctx_job = pool.submit(self.provider.load_context, now)
+            data, errors = self.provider.load_instruments(
+                list(need.values()), now,
+                progress=lambda k, n: step(3 + 52 * k / n, f"Preços ao vivo e gráficos {k}/{n}"))
+            step(56, "Juros, COT, agenda e manchetes")
+            ctx = ctx_job.result()
         step(64, "Força relativa das moedas")
 
         fx_h1 = {s: d.frames["H1"] for s, d in data.items() if not d.inst.is_metal}
@@ -521,17 +526,19 @@ class Engine:
         inst = get_instrument(symbol)
         now = self.now()
         step(3, f"Preços ao vivo e gráficos de {inst.symbol}")
-        data, errors = self.provider.load_instruments([inst], now)
-        if inst.symbol not in data:
-            raise RuntimeError(f"sem dados para {inst.symbol}: {errors.get(inst.symbol, 'falha de rede')}")
         others = [i for i in FX_PAIRS if i.symbol != inst.symbol]
-        rest, err2 = self.provider.load_instruments(
-            others, now, spec=LIGHT,
-            progress=lambda k, n: step(15 + 50 * k / n, f"Força relativa: pares {k}/{n}"))
+        # the instrument, the other pairs (light) and the fundamentals download in parallel
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            ctx_job = pool.submit(self.provider.load_context, now)
+            rest_job = pool.submit(self.provider.load_instruments, others, now, None, LIGHT)
+            data, errors = self.provider.load_instruments([inst], now)
+            if inst.symbol not in data:
+                raise RuntimeError(f"sem dados para {inst.symbol}: {errors.get(inst.symbol, 'falha de rede')}")
+            step(15, "Força relativa das moedas")
+            rest, err2 = rest_job.result()
+            ctx = ctx_job.result()
         errors.update(err2)
         rest.update(data)
-        step(68, "Juros, COT, agenda e manchetes")
-        ctx = self.provider.load_context(now)
         step(80, f"Analisando {inst.symbol}")
         fx_h1 = {k: v.frames["H1"] for k, v in rest.items() if not v.inst.is_metal}
         met_h1 = {inst.base: data[inst.symbol].frames["H1"]} if inst.is_metal else {}

@@ -44,7 +44,10 @@ MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "e
 
 
 def _clip(s, lo, hi):
-    return s.replace([np.inf, -np.inf], np.nan).clip(lo, hi)
+    v = np.asarray(s, dtype=float)
+    with np.errstate(invalid="ignore"):
+        v = np.clip(np.where(np.isfinite(v), v, np.nan), lo, hi)      # inf -> NaN, then clip (NaN stays)
+    return pd.Series(v, index=s.index)
 
 
 def _daily_context(h1: pd.DataFrame) -> pd.DataFrame:
@@ -133,7 +136,8 @@ def _feature_frame(h1: pd.DataFrame, is_metal: bool, horizon: int, strength=None
     # ---- seasonality: typical activity of the next `horizon` hours of the week (past weeks only)
     s = (bar_rng / adr)
     how = h1.index.dayofweek * 24 + h1.index.hour
-    prof = s.groupby(how).transform(lambda x: x.rolling(6, min_periods=2).mean())
+    # same as groupby(how).transform(rolling(6).mean()), cythonised (no Python call per group)
+    prof = s.groupby(how).rolling(6, min_periods=2).mean().droplevel(0).reindex(s.index)
     prof = prof[~prof.index.duplicated()]
     fwd = pd.Series(0.0, index=h1.index)
     for k in range(1, horizon + 1):

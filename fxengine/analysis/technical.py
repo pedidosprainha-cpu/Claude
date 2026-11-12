@@ -218,8 +218,15 @@ def entry_timing(views: dict[str, TFView], price: float, d: int) -> tuple[float,
     return float(np.clip(mult, 0.4, 1.1)), tnotes, reasons, warnings
 
 
+TECH_BARS = 1500   # longest lookback is 250 bars (squeeze); EMA 200 converges to <1e-5 within 1,300 bars
+
+
+def _tail(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    return df.iloc[-TECH_BARS:] if df is not None and len(df) > TECH_BARS else df
+
+
 def analyze(frames: dict[str, pd.DataFrame], price: float, tf_weights: dict[str, float]) -> TechnicalResult:
-    views = {tf: vw for tf in tf_weights if (vw := analyze_tf(tf, frames.get(tf))) is not None}
+    views = {tf: vw for tf in tf_weights if (vw := analyze_tf(tf, _tail(frames.get(tf)))) is not None}
     reasons: list[str] = []
     warnings: list[str] = []
     if not views:

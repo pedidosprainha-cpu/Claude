@@ -18,8 +18,11 @@ def wilder(s: pd.Series, n: int) -> pd.Series:
 
 
 def true_range(df: pd.DataFrame) -> pd.Series:
-    pc = df.c.shift()
-    return pd.concat([df.h - df.l, (df.h - pc).abs(), (df.l - pc).abs()], axis=1).max(axis=1)
+    h, l, c = df.h.to_numpy(float), df.l.to_numpy(float), df.c.to_numpy(float)
+    pc = np.r_[np.nan, c[:-1]]
+    with np.errstate(invalid="ignore"):
+        tr = np.fmax(h - l, np.fmax(np.abs(h - pc), np.abs(l - pc)))   # fmax skips NaN like max(axis=1)
+    return pd.Series(tr, index=df.index)
 
 
 def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
@@ -28,10 +31,13 @@ def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
 
 def rsi(c: pd.Series, n: int = 14) -> pd.Series:
     d = c.diff()
-    up = wilder(d.clip(lower=0), n)
-    dn = wilder((-d).clip(lower=0), n)
-    out = 100 - 100 / (1 + up / dn.replace(0, np.nan))
-    return out.where(dn != 0, 100.0).where(~((up == 0) & (dn == 0)), 50.0)
+    up = wilder(d.clip(lower=0), n).to_numpy()
+    dn = wilder((-d).clip(lower=0), n).to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = 100 - 100 / (1 + up / np.where(dn == 0, np.nan, dn))
+    out = np.where(dn != 0, out, 100.0)                  # no losses -> 100 (NaN rows stay 100 as before)
+    out = np.where((up == 0) & (dn == 0), 50.0, out)     # flat -> 50
+    return pd.Series(out, index=c.index)
 
 
 def macd(c: pd.Series, fast: int = 12, slow: int = 26, sig: int = 9):
