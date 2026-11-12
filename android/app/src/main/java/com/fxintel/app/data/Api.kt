@@ -39,7 +39,9 @@ class FxApi(baseUrl: String, private val apiKey: String) {
 
     val valid: Boolean get() = base.toHttpUrlOrNull() != null
 
-    private fun req(path: String) = Request.Builder().url("$base$path").header("X-API-Key", apiKey)
+    private fun req(path: String) = Request.Builder().url("$base$path").apply {
+        if (apiKey.isNotBlank()) header("X-API-Key", apiKey)  // chave é opcional
+    }
 
     private suspend fun call(r: Request): String = withContext(Dispatchers.IO) {
         client.newCall(r).execute().use { resp ->
@@ -81,7 +83,7 @@ class FxApi(baseUrl: String, private val apiKey: String) {
 
     fun openSocket(listener: WebSocketListener): WebSocket {
         val wsUrl = base.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") +
-            "/api/v1/ws?api_key=" + java.net.URLEncoder.encode(apiKey, "UTF-8")
+            "/api/v1/ws" + if (apiKey.isNotBlank()) "?api_key=" + java.net.URLEncoder.encode(apiKey, "UTF-8") else ""
         return client.newWebSocket(Request.Builder().url(wsUrl).build(), listener)
     }
 }

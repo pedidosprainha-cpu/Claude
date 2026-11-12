@@ -1,13 +1,14 @@
 # API (v1)
 
-Base: `http(s)://<servidor>/api/v1`. Autenticação: cabeçalho `X-API-Key: <chave>`. No WebSocket use `?api_key=`.
+Base: `http(s)://<servidor>/api/v1`. **Sem autenticação por padrão.** Com `FXI_REQUIRE_API_KEY=1`, envie o
+cabeçalho `X-API-Key: <chave>` (no WebSocket, `?api_key=`).
 Documentação interativa (OpenAPI/Swagger): `/docs`.
 
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/health` | **Pública.** Status, provedores (latência/falhas/circuito), heartbeats das tarefas, banco, modelo |
 | GET | `/instruments` | Especificações e instrumentos habilitados |
-| GET | `/quotes` | Cotações (bid, ask, spread, fonte, `spread_source`, horário, idade, variação) |
+| GET | `/quotes` | Cotações Swissquote com bid/ask reais (fallback Yahoo/gold-api), fonte, `spread_source`, horário, idade, variação e `check` (divergência em pips vs. TrueFX/Yahoo) |
 | GET | `/chart/{symbol}?tf=M5\|M15\|H1\|H4\|D1&bars=` | Candles (metais ajustados ao spot) |
 | GET | `/calendar?hours=72` | Eventos econômicos |
 | POST | `/analyze` | **ANALISAR MERCADO AGORA**: análise completa (ver estrutura abaixo) |

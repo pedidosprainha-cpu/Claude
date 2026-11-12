@@ -140,9 +140,19 @@ def test_api_auth_and_endpoints(engine):
         M.S.hub = engine.hub
         h = client.get("/api/v1/health")
         assert h.status_code == 200 and "providers" in h.json()
-        assert client.get("/api/v1/settings").status_code == 401
-        key = M.S.storage.create_api_key("teste")
-        hdr = {"X-API-Key": key}
+        # padrão: sem chave de API
+        assert h.json()["auth_required"] is False
+        assert client.get("/api/v1/settings").status_code == 200
+        # chave só é exigida quando FXI_REQUIRE_API_KEY=1
+        import os
+        os.environ["FXI_REQUIRE_API_KEY"] = "1"
+        try:
+            assert client.get("/api/v1/settings").status_code == 401
+            key = M.S.storage.create_api_key("teste")
+            assert client.get("/api/v1/settings", headers={"X-API-Key": key}).status_code == 200
+        finally:
+            os.environ.pop("FXI_REQUIRE_API_KEY", None)
+        hdr = {}
         assert client.get("/api/v1/settings", headers=hdr).json()["risk"]["risk_per_trade_pct"] > 0
         bad = client.put("/api/v1/settings", headers=hdr, json={"risk": {"risk_per_trade_pct": 10}})
         assert bad.status_code == 400
@@ -157,3 +167,17 @@ def test_api_auth_and_endpoints(engine):
         assert client.get("/api/v1/model", headers=hdr).json()["available"] is False
         assert client.post("/api/v1/broker/oanda/execute", headers=hdr,
                            json={"signal_id": "x", "confirm": True}).status_code == 404
+
+
+def test_public_quote_parsers():
+    from fxintel.data.publicquotes import SwissquoteProvider, TrueFxProvider
+    sq = [{"topo": {"platform": "SwissquoteLtd"}, "ts": 1794518719205, "spreadProfilePrices": [
+        {"spreadProfile": "premium", "bid": 1.10529, "ask": 1.10544},
+        {"spreadProfile": "elite", "bid": 1.10535, "ask": 1.10537}]}]
+    q = SwissquoteProvider.parse(sq, "premium")
+    assert q["bid"] == 1.10529 and q["ask"] == 1.10544 and q["profile"] == "premium"
+    q2 = SwissquoteProvider.parse(sq, "standard")  # perfil ausente -> o de maior spread (conservador)
+    assert q2["profile"] == "premium"
+    tf = TrueFxProvider.parse("EUR/USD,1794518708567,1.10,535,1.10,539,1.10454,1.11031,1.10925\n"
+                              "USD/JPY,1794518708876,159.,864,159.,871,159.300,160.047,159.757")
+    assert abs(tf["EURUSD"]["bid"] - 1.10535) < 1e-12 and abs(tf["USDJPY"]["ask"] - 159.871) < 1e-9

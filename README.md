@@ -5,6 +5,11 @@ liquidez)**, **análise fundamentalista/intermercados**, **modelagem quantitativ
 e **gestão de risco**, com backend HTTP/WebSocket, painel web e **aplicativo Android**. Foco em XAU/USD,
 XAG/USD e 14 pares de moedas.
 
+**Sem chave de API e sem servidor obrigatório:** o app Android roda o motor completo no próprio celular,
+buscando dados direto de fontes públicas: **Swissquote** (bid/ask reais de FX e metais), TrueFX (checagem
+cruzada), Yahoo Finance (histórico), gold-api.com e o calendário ForexFactory. O servidor Python é opcional
+(painel web, backtest, retreino) e também não exige chave por padrão.
+
 Ao receber o comando **ANALISAR MERCADO AGORA**, o motor faz o seguinte:
 
 1. Coleta cotações spot (bid/ask, spread, horário e idade).
@@ -30,7 +35,7 @@ Ao receber o comando **ANALISAR MERCADO AGORA**, o motor faz o seguinte:
 |---|---|---|
 | 1 | Motor analítico integrado | `fxintel/` · [Arquitetura](docs/ARQUITETURA.md) · [Metodologia](docs/METODOLOGIA.md) |
 | 2 | Backend com APIs (REST + WebSocket) | `backend/` · [API](docs/API.md) |
-| 3 | Aplicativo Android (fonte + APK) | `android/` · **`releases/FXIntel-1.0.0.apk`** · [Android](docs/ANDROID.md) |
+| 3 | Aplicativo Android (fonte + APK), **autônomo** | `android/` · **`releases/FXIntel-1.1.0.apk`** · [Android](docs/ANDROID.md) |
 | 4 | Painel interativo | `dashboard/` (servido em `/` pelo backend) |
 | 5 | Classificação, validação e gestão de risco | `fxintel/engine.py`, `fxintel/risk/`, `fxintel/execution/` |
 | 6 | Relatórios de testes e avaliação quantitativa | [docs/TESTES.md](docs/TESTES.md) · `reports/` |
@@ -41,13 +46,13 @@ Ao receber o comando **ANALISAR MERCADO AGORA**, o motor faz o seguinte:
 ```bash
 pip install -r requirements.txt
 python -m fxintel train      # dados históricos + walk-forward + modelo + relatório (3–6 min)
-python -m fxintel serve      # API + painel em http://localhost:8000 (chave em var/admin_api_key.txt)
+python -m fxintel serve      # API + painel em http://localhost:8000 (sem chave por padrão)
 python -m fxintel analyze    # análise no terminal
-python -m pytest             # 21 testes offline
+python -m pytest             # 22 testes offline
 ```
 
 Docker: `cd deploy && docker compose up -d --build` (HTTPS opcional com Caddy).
-Android: instale o APK, informe a URL do servidor e a chave em **Ajustes**.
+**Android: instale o APK e toque em ANALISAR MERCADO AGORA. Nada a configurar.**
 
 ## Estrutura
 
@@ -55,7 +60,7 @@ Android: instale o APK, informe a URL do servidor e a chave em **Ajustes**.
 fxintel/        motor: data · technical · fundamental · quant · signals · risk · execution · backtest · engine
 backend/        FastAPI (REST, WebSocket, autenticação, tarefas de fundo)
 dashboard/      painel web (HTML/CSS/JS)
-android/        app Kotlin + Jetpack Compose
+android/        app Kotlin + Jetpack Compose (motor portado para Kotlin, verificado contra o Python)
 config/         settings.example.json · central_banks.json (atualizar após decisões dos BCs)
 reports/        relatórios de backtest (Markdown, JSON, gráficos)
 deploy/         Dockerfile · docker-compose · Caddyfile · systemd
@@ -71,7 +76,10 @@ analysis/       scripts e análise manual anteriores (legado, 20/07/2026)
 - **Probabilidades verificáveis:** a probabilidade exibida é a frequência observada fora da amostra na faixa
   prevista, com IC 90% e *n*, nunca uma confiança declarada.
 - **Custos explícitos** (spread por sessão, slippage, gaps; "stop primeiro" em candles ambíguos).
-- **Sinal ≠ ordem:** execução apenas em conta demo, ou via OANDA com habilitação e confirmação explícitas.
+- **Sinal ≠ ordem:** o app não envia ordens. O servidor oferece conta demo local e um conector de corretora
+  opcional, desativado por padrão.
+- **Mesmos números no celular e no servidor:** o motor Kotlin do app é verificado contra o motor Python por
+  testes "golden" (quadro técnico, candidatos, features e probabilidades idênticos sobre os mesmos dados).
 - **Preservação de capital primeiro:** limites de perda, exposição por moeda, correlação e bloqueio automático.
 
 ---

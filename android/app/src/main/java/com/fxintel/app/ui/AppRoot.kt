@@ -39,11 +39,10 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun AppRoot(vm: MainViewModel, onAskNotif: () -> Unit) {
     val s by vm.ui.collectAsState()
-    var tab by remember { mutableIntStateOf(if (s.configured) 0 else 3) }
+    var tab by remember { mutableIntStateOf(0) }
     val snack = remember { SnackbarHostState() }
     val fx = LocalFx.current
     LaunchedEffect(s.toast) { s.toast?.let { snack.showSnackbar(it); vm.clearToast() } }
-    LaunchedEffect(Unit) { if (!vm.ui.value.configured) tab = 3 }
 
     Scaffold(
         topBar = {
@@ -58,8 +57,8 @@ fun AppRoot(vm: MainViewModel, onAskNotif: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val (label, bg) = when {
                             !s.networkOnline -> "sem rede" to fx.badBg
-                            s.link == Link.LIVE -> "● ao vivo" to fx.goodBg
-                            s.serverOk == false -> "servidor offline" to fx.badBg
+                            s.link == Link.LIVE -> (if (s.localMode) "● ao vivo · aparelho" else "● ao vivo") to fx.goodBg
+                            s.serverOk == false -> (if (s.localMode) "fontes indisponíveis" else "servidor offline") to fx.badBg
                             s.link == Link.POLLING -> "● consulta" to fx.warnBg
                             else -> "conectando" to fx.warnBg
                         }

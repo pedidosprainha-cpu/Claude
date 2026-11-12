@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -41,6 +42,28 @@ def _summ(res: dict) -> dict:
         if per in out:
             out[per] = {k: v for k, v in out[per].items() if k != "_port"}
     return out
+
+
+EXPORT_PATH = MODEL_DIR / "model_export.json"
+
+
+def export_model(model: ProbabilityModel) -> dict | None:
+    """Exporta o modelo logístico em JSON (avaliação no aplicativo Android, sem servidor)."""
+    if model.kind != "logistic":
+        return None
+    imp, sc, lr = (model.est.named_steps[k] for k in ("imp", "sc", "lr"))
+    keep = ("trained_at", "data_start", "data_end", "n_train", "base_rate", "k_win", "r_loss", "validated",
+            "validation_rule", "oos_metrics", "oos_holdout_metrics", "oos_calibration_table", "horizon_bars")
+    d = {"kind": "logistic", "features": model.features,
+         "impute_median": [float(x) for x in imp.statistics_], "scaler_mean": [float(x) for x in sc.mean_],
+         "scaler_scale": [float(x) for x in sc.scale_], "coef": [float(x) for x in lr.coef_[0]],
+         "intercept": float(lr.intercept_[0]), "meta": clean({k: model.meta.get(k) for k in keep})}
+    txt = json.dumps(d, ensure_ascii=False, indent=1)
+    EXPORT_PATH.write_text(txt, encoding="utf-8")
+    assets = Path(__file__).resolve().parent.parent / "android" / "app" / "src" / "main" / "assets"
+    if assets.exists():
+        (assets / "model.json").write_text(txt, encoding="utf-8")
+    return d
 
 
 def deflated(selected_r: np.ndarray) -> dict:
@@ -98,6 +121,7 @@ def train(settings: dict | None = None, hub: DataHub | None = None, write_report
         "horizon_bars": settings["model"]["horizon_bars"],
     })
     model.save(MODEL_PATH)
+    export_model(model)
 
     sel = prim["selected"]
     report = {

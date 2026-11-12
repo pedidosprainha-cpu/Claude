@@ -28,6 +28,7 @@ from .goldapi import GoldApiProvider
 from .models import (TF_SECONDS, Quote, clean_ohlc, drop_weekend, repair_level_shifts, resample,
                      session_of, utcnow)
 from .oanda import OandaProvider
+from .publicquotes import SwissquoteProvider, TrueFxProvider
 from .yahoo import YahooProvider
 
 log = logging.getLogger("fxintel.data.hub")
@@ -46,7 +47,9 @@ class DataHub:
         p = self.settings["providers"]
         self.yahoo = YahooProvider(hosts=p.get("yahoo_hosts"), timeout=p.get("timeout_s", 15))
         self.goldapi = GoldApiProvider(timeout=p.get("timeout_s", 15))
-        self.oanda = OandaProvider(timeout=p.get("timeout_s", 15))
+        self.oanda = OandaProvider(timeout=p.get("timeout_s", 15))  # opcional, desativado por padrão
+        self.swissquote = SwissquoteProvider(profile=p.get("swissquote_profile", "premium"))
+        self.truefx = TrueFxProvider(timeout=10)
         self.calendar = CalendarProvider(timeout=p.get("timeout_s", 15))
         self.max_workers = p.get("max_workers", 8)
         self._mem: dict[tuple, tuple[float, pd.DataFrame]] = {}
@@ -157,64 +160,97 @@ class DataHub:
 
     # ------------------------------------------------------------------ cotações
     def quotes(self, symbols: list[str]) -> dict[str, Quote]:
+        """Cotações com failover, todas de fontes públicas sem chave de API:
+        Swissquote (bid/ask reais) -> Yahoo (último preço, spread estimado) -> gold-api (metais).
+        OANDA só é usada se explicitamente incluída em `quotes_order` e configurada (opcional).
+        TrueFX e Yahoo servem de checagem cruzada do preço (divergência em pips em `Quote.check`)."""
         now = utcnow()
         out: dict[str, Quote] = {}
-        order = self.settings["providers"].get("quotes_order", ["oanda", "yahoo", "goldapi"])
+        order = self.settings["providers"].get("quotes_order", ["swissquote", "yahoo", "goldapi"])
+        insts = {s: I.get(s) for s in symbols}
 
         if "oanda" in order and self.oanda.configured:
             try:
                 t0 = time.perf_counter()
-                insts = [I.get(s) for s in symbols]
-                px = self.oanda.pricing([i.oanda for i in insts])
+                px = self.oanda.pricing([i.oanda for i in insts.values()])
                 lat = (time.perf_counter() - t0) * 1000
-                for i in insts:
+                for s, i in insts.items():
                     p = px.get(i.oanda)
                     if p:
-                        out[i.symbol] = Quote(i.symbol, p["bid"], p["ask"], p["time"], "oanda",
-                                              "provider", latency_ms=lat)
+                        out[s] = Quote(s, p["bid"], p["ask"], p["time"], "oanda", "provider", latency_ms=lat)
             except ProviderError as exc:
                 log.warning("OANDA indisponível, usando fallback: %s", exc)
 
-        missing = [s for s in symbols if s not in out]
-        fx = [s for s in missing if I.get(s).kind == "fx"]
-        metals = [s for s in missing if I.get(s).kind == "metal"]
+        if "swissquote" in order:
+            missing = [s for s in symbols if s not in out]
+            if missing:
+                try:
+                    t0 = time.perf_counter()
+                    px = self.swissquote.quotes([(insts[s].base, insts[s].quote) for s in missing])
+                    lat = (time.perf_counter() - t0) * 1000
+                    for s in missing:
+                        p = px.get(s)
+                        if p:
+                            out[s] = Quote(s, p["bid"], p["ask"], p["time"], "swissquote", "provider",
+                                           latency_ms=lat)
+                except ProviderError as exc:
+                    log.warning("Swissquote indisponível: %s", exc)
 
+        # Yahoo: fechamento anterior (variação do dia), checagem cruzada e fallback para FX
+        fx = [s for s in symbols if insts[s].kind == "fx"]
+        ylp: dict = {}
         if fx:
             try:
                 t0 = time.perf_counter()
-                lp = self.yahoo.last_prices([I.get(s).yahoo for s in fx])
+                ylp = self.yahoo.last_prices([insts[s].yahoo for s in fx])
                 lat = (time.perf_counter() - t0) * 1000
                 for s in fx:
-                    inst = I.get(s)
-                    p = lp.get(inst.yahoo)
+                    p = ylp.get(insts[s].yahoo)
                     if not p:
                         continue
-                    sp = self.estimate_spread(inst, now)
-                    out[s] = Quote(s, p["price"] - sp / 2, p["price"] + sp / 2, p["time"], "yahoo",
-                                   "estimated", prev_close=p.get("prev_close"), latency_ms=lat)
+                    if s in out:
+                        out[s].prev_close = p.get("prev_close")
+                        out[s].check = {"yahoo_pips": round((out[s].mid - p["price"]) / insts[s].pip, 1)}
+                    else:
+                        sp = self.estimate_spread(insts[s], now)
+                        out[s] = Quote(s, p["price"] - sp / 2, p["price"] + sp / 2, p["time"], "yahoo",
+                                       "estimated", prev_close=p.get("prev_close"), latency_ms=lat)
             except ProviderError as exc:
                 log.warning("Yahoo cotações indisponível: %s", exc)
 
-        for s in metals:
-            inst = I.get(s)
-            try:
-                t0 = time.perf_counter()
-                p = self.goldapi.spot(s)
-                lat = (time.perf_counter() - t0) * 1000
-                sp = self.estimate_spread(inst, now)
-                prev = self._metal_prev_close(s, p["price"])
-                out[s] = Quote(s, p["price"] - sp / 2, p["price"] + sp / 2, p["time"], "goldapi",
-                               "estimated", prev_close=prev, latency_ms=lat)
-            except ProviderError as exc:
-                log.warning("gold-api indisponível para %s: %s", s, exc)
-                try:  # fallback: último preço do proxy (sem ajuste de base)
-                    lp = self.yahoo.last_prices([inst.yahoo]).get(inst.yahoo)
-                    if lp:
-                        sp = self.estimate_spread(inst, now) * 1.5
-                        out[s] = Quote(s, lp["price"] - sp / 2, lp["price"] + sp / 2, lp["time"],
-                                       "yahoo-proxy", "estimated", prev_close=lp.get("prev_close"))
-                except ProviderError:
-                    pass
+        for s in [s for s in symbols if insts[s].kind == "metal"]:
+            inst = insts[s]
+            if s not in out:
+                try:
+                    t0 = time.perf_counter()
+                    p = self.goldapi.spot(s)
+                    lat = (time.perf_counter() - t0) * 1000
+                    sp = self.estimate_spread(inst, now)
+                    out[s] = Quote(s, p["price"] - sp / 2, p["price"] + sp / 2, p["time"], "goldapi",
+                                   "estimated", latency_ms=lat)
+                except ProviderError as exc:
+                    log.warning("gold-api indisponível para %s: %s", s, exc)
+                    try:  # último recurso: proxy do Yahoo (sem ajuste de base)
+                        lp = self.yahoo.last_prices([inst.yahoo]).get(inst.yahoo)
+                        if lp:
+                            sp = self.estimate_spread(inst, now) * 1.5
+                            out[s] = Quote(s, lp["price"] - sp / 2, lp["price"] + sp / 2, lp["time"],
+                                           "yahoo-proxy", "estimated")
+                    except ProviderError:
+                        pass
+            if s in out:
+                out[s].prev_close = self._metal_prev_close(s, out[s].mid)
+
+        # checagem cruzada com TrueFX (10 pares principais)
+        try:
+            tf = self.truefx.quotes()
+            for s, p in tf.items():
+                if s in out and out[s].source != "truefx":
+                    chk = out[s].check or {}
+                    chk["truefx_pips"] = round((out[s].mid - (p["bid"] + p["ask"]) / 2) / insts[s].pip, 1)
+                    out[s].check = chk
+        except ProviderError:
+            pass
         with self._lock:
             self._last_quotes.update(out)
         return out
@@ -240,8 +276,8 @@ class DataHub:
 
     def health(self) -> dict:
         return {
-            "providers": [p.health.to_dict() for p in (self.oanda, self.yahoo, self.goldapi,
-                                                       self.calendar)],
+            "providers": [p.health.to_dict() for p in (self.swissquote, self.truefx, self.yahoo, self.goldapi,
+                                                       self.calendar, self.oanda)],
             "oanda_configured": self.oanda.configured,
             "calendar_fetched_at": self.calendar.fetched_at.isoformat() if self.calendar.fetched_at else None,
         }

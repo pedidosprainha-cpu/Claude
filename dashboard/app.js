@@ -11,14 +11,14 @@ let state = { analysis: null, selected: null, tf: "H1", symbol: "EURUSD", chart:
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", "X-API-Key": key || "", ...(opts.headers || {}) } });
-  if (r.status === 401) { askKey(); throw new Error("Chave de API inválida"); }
+  if (r.status === 401) { authRequired = true; askKey(); throw new Error("Chave de API inválida"); }
   if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch (e) {} throw new Error(m); }
   return r.json();
 }
 
 function askKey() { $("#key-modal").classList.remove("hidden"); $("#key-input").focus(); }
 $("#key-save").onclick = () => { key = $("#key-input").value.trim(); try { localStorage.setItem(KEY, key); } catch (e) {} $("#key-modal").classList.add("hidden"); boot(); };
-$("#btn-key").onclick = askKey;
+$("#btn-key").onclick = askKey;  // usado apenas se o servidor exigir chave (FXI_REQUIRE_API_KEY=1)
 
 /* ---------------- abas */
 $$("#tabs button").forEach((b) => (b.onclick = () => {
@@ -302,8 +302,10 @@ async function refreshStatus() {
   } catch (e) { pill("#st-data", "bad", "servidor offline"); }
 }
 
+let authRequired = false;
 async function boot() {
-  if (!key) { askKey(); return; }
+  try { authRequired = !!(await fetch("/api/v1/health").then((r) => r.json())).auth_required; } catch (e) { authRequired = false; }
+  if (authRequired && !key) { askKey(); return; }
   try {
     const inst = await api("/api/v1/instruments"); inst.forEach((i) => (state.digits[i.symbol] = i.digits));
     const q = await api("/api/v1/quotes"); renderQuotes(q.data, q.at);

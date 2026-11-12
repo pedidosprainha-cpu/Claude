@@ -19,12 +19,16 @@ Detalhes e reprodução: `reports/RELATORIO-BACKTEST-*.md` e `python -m fxintel 
 
 ## Limitações de dados
 
-1. **Sem bid/ask histórico gratuito:** spreads e slippage são estimados. Em notícias e na rolagem, os spreads
-   reais podem ser várias vezes maiores. Com OANDA configurado, as cotações ao vivo passam a ter bid/ask reais.
+1. **Bid/ask ao vivo reais, histórico não:** as cotações ao vivo vêm da Swissquote com bid/ask reais (sem
+   chave), mas não existe bid/ask histórico gratuito, então o backtest usa spreads estimados. O perfil "premium"
+   da Swissquote mostra spreads um pouco maiores que a tabela do backtest (ex.: EURUSD 1,5 vs. 1,0 pip), o que
+   torna o backtest levemente otimista em custo. Os spreads reais dependem da sua corretora.
 2. **Metais via proxy:** ouro via PAXG-USD (token cripto; prêmio/desconto vs. spot ≈ ±0,5%; liquidez de
    exchanges cripto) e prata via futuro SI=F (base, rolagens e intercalação de contratos, reparadas por
    heurística). Os níveis são ajustados ao spot atual, mas a microestrutura do proxy pode diferir do spot.
-3. **Atraso das cotações Yahoo:** tipicamente 15–60 s. O portão de idade (180 s) bloqueia dados mais antigos.
+3. **Fontes públicas sem SLA:** Swissquote, TrueFX, Yahoo, gold-api e ForexFactory são endpoints públicos que
+   podem mudar ou limitar requisições (o calendário responde 429 de forma intermitente). Há retry, cache e
+   fallback. Se o calendário estiver indisponível, o portão de eventos **bloqueia** os sinais (conservador).
 4. **Histórico curto:** ~2,8 anos de H1 dão ~1,8 ano de teste OOS, com poder estatístico limitado para
    detectar vantagens pequenas (≤ 0,05R).
 5. **Calendário e juros sem histórico point-in-time:** não entram no modelo nem no backtest. O bloqueio por
@@ -50,10 +54,11 @@ Detalhes e reprodução: `reports/RELATORIO-BACKTEST-*.md` e `python -m fxintel 
 
 - O **app Android não foi executado em dispositivo/emulador** neste ambiente (sem virtualização). Foi compilado,
   assinado, testado no parsing das respostas reais da API e renderizado na JVM (Paparazzi).
-- O conector **OANDA** (dados e ordens) foi implementado segundo a documentação v20, mas **não foi exercitado
-  contra o servidor real** (sem credenciais). Os testes cobrem apenas o parsing das respostas.
-- O Yahoo Finance é uma fonte não oficial, sujeita a mudanças e limites de taxa. Já existe limitação de taxa,
-  retry e circuit breaker, mas para uso profissional configure um provedor com SLA (ex.: OANDA).
+- Nenhuma fonte exige chave de API. O conector OANDA permanece no código apenas como exemplo de integração
+  futura com corretora, desativado e desnecessário (não testado contra o servidor real).
+- O app embute o modelo treinado no servidor; no aparelho não há retreino (exige anos de dados e CPU).
+  Recompile o app após `python -m fxintel train` para atualizar o modelo.
+- O modo autônomo do app não possui conta demo; o acompanhamento forward dos sinais funciona normalmente.
 - A simulação em conta demonstrativa (paper trading) está implementada, mas **não houve período de operação
   demo** para medir o desempenho forward. Ele precisa ser acumulado em uso.
 

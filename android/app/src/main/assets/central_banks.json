@@ -1,0 +1,14 @@
+{
+  "_comment": "Tabela de política monetária mantida manualmente. Atualize após cada decisão. O motor emite alerta se 'as_of' tiver mais de 45 dias. 'stance': +1 ciclo de alta/viés hawkish, 0 neutro/pausa, -1 ciclo de corte/viés dovish. Fontes consultadas em 2026-11-12 (verifique nos sites oficiais): bankofengland.co.uk (MPS nov/2026), federalreserve.gov (H.15), think.ing.com (visão dos bancos centrais nov/2026), en.wikipedia.org/wiki/List_of_countries_by_central_bank_interest_rates, cbrates.com.",
+  "as_of": "2026-11-12",
+  "banks": {
+    "USD": {"bank": "Federal Reserve", "rate": 3.875, "rate_text": "3,75%–4,00%", "last_change": "2026-09", "stance": 1, "next_meeting": "2026-12-09", "note": "Alta em set/2026, manutenção em 28/out; mercado projeta mais uma alta em dez."},
+    "EUR": {"bank": "BCE", "rate": 2.50, "rate_text": "2,50% (depósito)", "last_change": null, "stance": 0, "next_meeting": "2026-12-17", "note": "Manutenção em 29/out; próximo movimento mais provável é de alta."},
+    "GBP": {"bank": "Bank of England", "rate": 4.00, "rate_text": "4,00%", "last_change": "2026-11-04", "stance": 1, "next_meeting": "2026-12-17", "note": "Alta de 25 bp (8–1) em 04/nov; ata sinaliza possível nova alta."},
+    "JPY": {"bank": "Bank of Japan", "rate": 1.25, "rate_text": "1,25%", "last_change": null, "stance": 1, "next_meeting": "2026-12-18", "note": "Inflação na meta de 2%; normalização gradual esperada."},
+    "CHF": {"bank": "SNB", "rate": 0.00, "rate_text": "0,00%", "last_change": "2026-09-24", "stance": 0, "next_meeting": "2026-12-10", "note": "Juro zero."},
+    "CAD": {"bank": "Bank of Canada", "rate": 2.50, "rate_text": "2,50%", "last_change": "2026-10-28", "stance": 1, "next_meeting": "2026-12-09", "note": "Alta em 28/out."},
+    "AUD": {"bank": "RBA", "rate": 4.85, "rate_text": "4,85% (fontes divergem: 4,60%)", "last_change": "2026-11-03", "stance": 1, "next_meeting": "2026-12-08", "note": "Fontes conflitantes; 4,85% é o dado mais recente encontrado."},
+    "NZD": {"bank": "RBNZ", "rate": 2.75, "rate_text": "2,75%", "last_change": null, "stance": 0, "next_meeting": "2026-12-09", "note": "Manutenção em 28/out."}
+  }
+}

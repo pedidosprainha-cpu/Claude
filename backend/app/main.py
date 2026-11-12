@@ -1,9 +1,9 @@
 """Backend HTTP/WebSocket do FXIntel (FastAPI).
 
 Execução:  python -m fxintel serve   (ou: uvicorn backend.app.main:app)
-Autenticação: cabeçalho `X-API-Key` (ou `?api_key=` no WebSocket). Na primeira execução, se
-não houver chaves, uma chave administrativa é criada e gravada em var/admin_api_key.txt
-(ou definida por FXI_API_KEY). Em produção, publique atrás de HTTPS (ver deploy/Caddyfile).
+Autenticação: OPCIONAL. Por padrão não há chave de API. Com FXI_REQUIRE_API_KEY=1 o cabeçalho
+`X-API-Key` passa a ser exigido (chave criada em var/admin_api_key.txt ou definida por FXI_API_KEY) —
+recomendado apenas se o servidor for exposto à internet (sempre atrás de HTTPS, ver deploy/Caddyfile).
 """
 from __future__ import annotations
 
@@ -172,7 +172,8 @@ async def lifespan(app: FastAPI):
     global S
     setup_logging()
     S = AppState()
-    bootstrap_key(S.storage)
+    if auth_required():
+        bootstrap_key(S.storage)
     S.storage.log_event("startup", f"Servidor iniciado (v{__version__})")
     if os.environ.get("FXI_DISABLE_BACKGROUND") != "1":
         S.tasks = [asyncio.create_task(quotes_loop()), asyncio.create_task(monitor_loop()),
@@ -188,7 +189,15 @@ app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("FXI_CORS", "*")
                    allow_methods=["*"], allow_headers=["*"])
 
 
+def auth_required() -> bool:
+    """Chave de API é OPCIONAL: só exigida com FXI_REQUIRE_API_KEY=1 (recomendado se o servidor for
+    exposto à internet). Por padrão o servidor funciona sem chave (uso pessoal / rede local)."""
+    return os.environ.get("FXI_REQUIRE_API_KEY", "0") == "1"
+
+
 def auth(x_api_key: str | None = Header(default=None), api_key: str | None = Query(default=None)) -> str:
+    if not auth_required():
+        return ""
     key = x_api_key or api_key
     if not key or not S.storage.check_api_key(key):
         time.sleep(0.3)  # atraso contra força bruta
@@ -213,6 +222,7 @@ def health():
     return {
         "status": "ok" if db_ok and not degraded else "degradado",
         "version": __version__, "time": now.isoformat(), "uptime_s": round(time.time() - S.started),
+        "auth_required": auth_required(),
         "market_open": market_open(now), "quotes_at": S.quotes_at, "heartbeat_age_s": hb_age,
         "database": db_ok, "providers": providers, "degraded": degraded,
         "model": {k: ms.get(k) for k in ("available", "validated", "trained_at", "age_hours", "stale")},
@@ -456,7 +466,7 @@ def revoke(kid: int, _: str = Depends(auth)):
 # ---------------------------------------------------------------------------- websocket
 @app.websocket("/api/v1/ws")
 async def ws_endpoint(ws: WebSocket, api_key: str = Query(default="")):
-    if not S.storage.check_api_key(api_key):
+    if auth_required() and not S.storage.check_api_key(api_key):
         await ws.close(code=4401)
         return
     await ws.accept()

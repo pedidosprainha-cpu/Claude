@@ -4,9 +4,10 @@
 
 ```
                 ┌──────────────────────── Provedores de dados ────────────────────────┐
-                │ Yahoo Finance (FX, PAXG, SI=F, DXY, ^TNX, ^VIX, ES=F, CL=F)          │
-                │ gold-api.com (XAU/XAG spot)   OANDA v20 (bid/ask reais, opcional)     │
-                │ ForexFactory/FairEconomy (calendário)   config/central_banks.json     │
+                │ TODAS PÚBLICAS, SEM CHAVE DE API:                                    │
+                │ Swissquote (bid/ask reais FX+metais)   TrueFX (checagem cruzada)     │
+                │ Yahoo Finance (histórico FX, PAXG, SI=F, DXY, ^TNX, ^VIX, ES=F, CL=F) │
+                │ gold-api.com (contingência metais)   ForexFactory (calendário)       │
                 └───────────────┬──────────────────────────────────────────────────────┘
                                 │ retry + backoff, rate limiting, circuit breaker, cache em disco
                         ┌───────▼────────┐
@@ -33,9 +34,13 @@
                    └──────┬────────────┬──────┘
                           │            │
                  ┌────────▼───┐  ┌─────▼──────────────┐
-                 │ Painel web │  │ App Android         │
+                 │ Painel web │  │ App Android         │ ← modo servidor (opcional)
                  │ (dashboard)│  │ Kotlin + Compose    │
                  └────────────┘  └────────────────────┘
+
+  App Android — MODO AUTÔNOMO (padrão): o motor é portado para Kotlin (android/.../engine) e roda no
+  aparelho, buscando os dados nas mesmas fontes públicas. Modelo e tabela de juros vêm embutidos (assets).
+  Equivalência com o Python verificada por testes golden (GoldenEngineTest).
 ```
 
 ## Módulos
@@ -84,7 +89,9 @@ O motor gera **sinais**. Uma **ordem** só existe quando um `BrokerAdapter` a ex
 
 - **Retry exponencial** e **circuit breaker** por provedor (abre por 60 s após 5 falhas seguidas).
 - **Limitação de taxa** no cliente Yahoo (espaçamento e concorrência máxima) e alternância de host (query1/query2).
-- **Failover de cotações:** OANDA → Yahoo/gold-api → proxy Yahoo (com spread ampliado e marcação de fonte).
+- **Failover de cotações:** Swissquote (bid/ask reais) → Yahoo (último preço, spread estimado) → gold-api →
+  proxy Yahoo. TrueFX e Yahoo servem de **checagem cruzada**; divergência acima de max(3 pips, 2 spreads) vs.
+  TrueFX bloqueia o sinal (portão `consistencia_cotacao`).
 - **Cache em disco** das barras: reinícios não exigem baixar todo o histórico; dados antigos são descartados.
 - **Marcação de qualidade:** cada cotação carrega fonte, horário, idade e se o spread é real ou estimado;
   os portões bloqueiam dados atrasados, congelados ou divergentes.
@@ -94,7 +101,8 @@ O motor gera **sinais**. Uma **ordem** só existe quando um `BrokerAdapter` a ex
 
 ## Segurança
 
-- Autenticação por chave de API (`X-API-Key`), armazenada como hash SHA-256; múltiplas chaves revogáveis.
+- **Nenhuma chave de API é necessária** para dados nem para uso pessoal. O servidor pode exigir chave
+  (`FXI_REQUIRE_API_KEY=1`) quando exposto à internet: chaves com hash SHA-256 e revogáveis.
 - Atraso em respostas 401 (mitiga força bruta). Segredos apenas por variáveis de ambiente.
 - HTTPS por proxy reverso (Caddy com Let's Encrypt incluído em `deploy/`).
 - O app Android aceita HTTP apenas para uso em rede local; em redes públicas use HTTPS.

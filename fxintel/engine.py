@@ -176,7 +176,7 @@ class AnalysisEngine:
             events = self.hub.calendar.events()
             cal_ok, cal_err = True, None
         except Exception as exc:  # noqa: BLE001
-            events, cal_ok, cal_err = [], False, str(exc)
+            events, cal_ok, cal_err = None, False, str(exc)
         timings["data_ms"] = round((time.perf_counter() - t1) * 1000)
 
         closes = {s: completed_bars(b["H1"], "H1", now)["c"] for s, b in bars.items() if "H1" in b and len(b["H1"])}
@@ -248,7 +248,7 @@ class AnalysisEngine:
                 "strength_1d": self._strength_now(strength, 24),
                 "strength_5d": self._strength_now(strength, 120),
                 "calendar_ok": cal_ok, "calendar_error": cal_err,
-                "upcoming_events": [e.to_dict() for e in events if now <= e.time <= now + timedelta(hours=36)
+                "upcoming_events": [e.to_dict() for e in (events or []) if now <= e.time <= now + timedelta(hours=36)
                                     and e.impact in ("High", "Medium")][:15],
             },
             "correlations": top_pairs(corr) if corr is not None else [],
@@ -329,7 +329,11 @@ class AnalysisEngine:
         sd = strength_diff(strength, inst, F.index) if strength else pd.DataFrame(index=F.index)
         fsnap = {k: (float(v) if np.isfinite(v) else None) for k, v in sd.iloc[-1].items()} if len(sd.columns) else {}
         fb = fundamental_bias(inst, macro_snapshot(mf), fsnap, cb)
-        ev = event_risk(inst, events, now, g["event_blackout_before_min"], g["event_blackout_after_min"])
+        if events is None:  # calendário indisponível: conservador, bloqueia por não poder verificar eventos
+            ev = {"blocked": True, "reason": "Calendário econômico indisponível: não é possível verificar eventos críticos",
+                  "next_critical": None, "upcoming": [], "holidays": [], "minutes_to_next_critical": None}
+        else:
+            ev = event_risk(inst, events, now, g["event_blackout_before_min"], g["event_blackout_after_min"])
         f4, sw4 = frames["H4"]
         fd, swd = frames["D1"]
         sr = cluster_levels(sw4[-120:] + swd[-60:], float(fd["atr"].iloc[-1]), float(last["c"]), 0.25,
@@ -393,6 +397,13 @@ class AnalysisEngine:
         gate("cotacao_atual", q.age_seconds(now) <= g["max_quote_age_s"],
              f"Cotação com {q.age_seconds(now):.0f}s de idade (máx. {g['max_quote_age_s']}s), fonte {q.source}")
         gate("qualidade_dados", ctx["data_quality"]["ok"], "; ".join(ctx["data_quality"]["issues"]) or "Dados íntegros")
+        chk = q.check or {}
+        tfx = chk.get("truefx_pips")
+        lim = max(3.0, 2 * q.spread / inst.pip)
+        gate("consistencia_cotacao", tfx is None or abs(tfx) <= lim,
+             (f"Diferença vs. TrueFX {tfx:+.1f} pips (máx. {lim:.1f})" if tfx is not None
+              else "Sem segunda fonte bid/ask para este ativo") + (
+                 f"; vs. Yahoo {chk['yahoo_pips']:+.1f} pips" if chk.get("yahoo_pips") is not None else ""))
         if g["block_on_anomaly"]:
             gate("anomalia_mercado", not ctx["anomalies"]["anomalous"],
                  "; ".join(ctx["anomalies"]["flags"]) or "Sem anomalias de preço")

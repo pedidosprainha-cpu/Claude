@@ -72,8 +72,8 @@ fun DashboardScreen(vm: MainViewModel, s: UiState, pad: PaddingValues) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding() + 4.dp,
         bottom = pad.calculateBottomPadding() + 12.dp)) {
         if (!s.configured) item {
-            SectionCard("Bem-vindo") {
-                Text("Configure o endereço do servidor FXIntel e a chave de API na aba Ajustes para começar.", fontSize = 14.sp)
+            SectionCard("Fonte de dados") {
+                Text("Informe o endereço do seu servidor em Ajustes ou volte ao modo autônomo (análise no próprio aparelho, sem servidor e sem chave).", fontSize = 14.sp)
             }
         }
         item {
@@ -99,7 +99,7 @@ fun DashboardScreen(vm: MainViewModel, s: UiState, pad: PaddingValues) {
         s.analysis?.let { a ->
             item {
                 SectionCard("Resultado · ${dateTime(a.created_at)} UTC") {
-                    if (a.signal != null) SignalDetails(a.signal, true) { vm.paperExecute(it) }
+                    if (a.signal != null) SignalDetails(a.signal, true, if (s.localMode) null else { id -> vm.paperExecute(id) })
                     else {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(fx.warnBg).padding(12.dp)) {
                             Text(a.headline, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -295,19 +295,32 @@ fun SettingsScreen(vm: MainViewModel, s: UiState, pad: PaddingValues, onAskNotif
     val fx = LocalFx.current
     var url by remember(s.prefs.serverUrl) { mutableStateOf(s.prefs.serverUrl) }
     var key by remember(s.prefs.apiKey) { mutableStateOf(s.prefs.apiKey) }
-    LaunchedEffect(s.configured) { if (s.configured) { vm.loadSettings(); vm.refreshHealth() } }
+    var showServer by remember(s.localMode) { mutableStateOf(!s.localMode) }
+    LaunchedEffect(s.configured, s.localMode) { if (s.configured) { vm.loadSettings(); vm.refreshHealth() } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
         item {
-            SectionCard("Servidor") {
-                OutlinedTextField(url, { url = it }, label = { Text("URL (ex.: https://fxintel.seudominio.com)") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                OutlinedTextField(key, { key = it }, label = { Text("Chave de API") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
-                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { vm.saveServer(url, key) }) { Text("Salvar") }
-                    OutlinedButton(onClick = { vm.testServer(url, key) }) { Text("Testar conexão") }
+            SectionCard("Fonte de dados") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("No aparelho (recomendado)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("O motor completo roda no celular com dados públicos: Swissquote (bid/ask reais), TrueFX, Yahoo, " +
+                            "gold-api e calendário ForexFactory. Sem servidor e sem chave de API.", fontSize = 12.sp, color = fx.muted)
+                    }
+                    Switch(s.localMode, { on -> if (on) vm.useLocal() else showServer = true })
                 }
-                Text("Use HTTPS em redes públicas. HTTP é aceito apenas para servidores na rede local.", fontSize = 11.sp, color = fx.muted)
+                if (s.localMode) Text("Ativo. Primeira análise baixa ~2 anos de histórico (alguns MB) e depois só atualizações.",
+                    fontSize = 11.sp, color = fx.buy, modifier = Modifier.padding(top = 6.dp))
+                if (showServer || !s.localMode) {
+                    SubHeader("Servidor próprio (opcional)")
+                    OutlinedTextField(url, { url = it }, label = { Text("URL (ex.: http://192.168.0.10:8000)") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+                    OutlinedTextField(key, { key = it }, label = { Text("Chave (opcional — só se o servidor exigir)") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { vm.saveServer(url, key) }, enabled = url.isNotBlank()) { Text("Usar servidor") }
+                        OutlinedButton(onClick = { vm.testServer(url, key) }, enabled = url.isNotBlank()) { Text("Testar") }
+                    }
+                }
             }
         }
         item {
@@ -340,7 +353,7 @@ private fun RemoteSettings(cfg: JsonObject, onSave: (JsonObject) -> Unit) {
     var reqModel by remember(cfg) {
         mutableStateOf(cfg["gates"]?.jsonObject?.get("require_model")?.jsonPrimitive?.booleanOrNull ?: true)
     }
-    SectionCard("Instrumentos e risco (servidor)") {
+    SectionCard("Instrumentos e risco") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ALL.forEach { sym ->
                 FilterChip(selected = sym in universe, onClick = {
@@ -377,7 +390,7 @@ private fun RemoteSettings(cfg: JsonObject, onSave: (JsonObject) -> Unit) {
                     put("require_model", reqModel)
                 }
             })
-        }, Modifier.padding(top = 10.dp)) { Text("Salvar no servidor") }
+        }, Modifier.padding(top = 10.dp)) { Text("Salvar") }
     }
 }
 
@@ -386,22 +399,23 @@ private fun SystemCard(s: UiState) {
     val fx = LocalFx.current
     val h = s.health
     SectionCard("Conectividade e integridade") {
+        KV("Modo", if (s.localMode) "autônomo (motor no aparelho)" else "servidor próprio")
         KV("Rede do aparelho", if (s.networkOnline) "conectada" else "sem conexão")
-        KV("Canal de dados", when (s.link) { Link.LIVE -> "tempo real (WebSocket)"; Link.POLLING -> "consulta periódica";
+        KV("Canal de dados", if (s.localMode) (if (s.link == Link.LIVE) "fontes públicas diretas (a cada 10 s)" else "falha nas fontes — tentando novamente")
+            else when (s.link) { Link.LIVE -> "tempo real (WebSocket)"; Link.POLLING -> "consulta periódica";
             Link.CONNECTING -> "conectando…"; Link.OFFLINE -> "offline" })
-        KV("Servidor", when (s.serverOk) { true -> "acessível"; false -> "inacessível"; null -> "—" })
+        if (!s.localMode) KV("Servidor", when (s.serverOk) { true -> "acessível"; false -> "inacessível"; null -> "—" })
         if (h != null) {
             KV("Status", h.status + if (h.degraded.isNotEmpty()) " (${h.degraded.joinToString()})" else "", true)
             KV("Versão / uptime", "${h.version} · ${f(h.uptime_s / 60, 0)} min")
             KV("Mercado", if (h.market_open) "aberto" else "fechado")
             KV("Última cotação", "${hhmm(h.quotes_at)} UTC")
-            KV("Banco de dados", if (h.database) "ok" else "falha")
+            if (!s.localMode) KV("Banco de dados", if (h.database) "ok" else "falha")
             KV("Modelo", when { h.model.available != true -> "não treinado"; h.model.validated == true -> "validado";
                 else -> "NÃO validado (sinais bloqueados)" } + " · idade ${f(h.model.age_hours, 1)} h")
-            h.providers.providers.forEach { p ->
-                val st = if (p.name == "oanda" && !h.providers.oanda_configured) "não configurado" else if (p.ok) "ok" else "falha"
-                KV("Provedor ${p.name}", "$st · ${f(p.last_latency_ms, 0)} ms · ${p.requests} req / ${p.failures} falhas")
+            h.providers.providers.filter { it.name != "oanda" }.forEach { p ->
+                KV("Fonte ${p.name}", "${if (p.ok) "ok" else "falha"} · ${f(p.last_latency_ms, 0)} ms · ${p.requests} req / ${p.failures} falhas")
             }
-        } else Text("Sem dados de saúde do servidor.", fontSize = 12.sp, color = fx.muted)
+        } else Text("Sem dados de integridade ainda.", fontSize = 12.sp, color = fx.muted)
     }
 }

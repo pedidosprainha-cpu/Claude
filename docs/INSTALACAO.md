@@ -1,6 +1,15 @@
 # Instalação, configuração e uso
 
-## 1. Backend (motor + API + painel web)
+## 0. Só o aplicativo (recomendado): sem servidor e sem chave
+
+1. Instale `releases/FXIntel-1.1.0.apk` no Android 8.0+ (permita "instalar apps de fontes desconhecidas").
+2. Abra o app e toque em **ANALISAR MERCADO AGORA**.
+
+O motor roda no aparelho e busca os dados direto das fontes públicas (Swissquote, TrueFX, Yahoo, gold-api,
+ForexFactory). Não há cadastro, chave de API nem servidor. A primeira análise baixa ~2 anos de histórico H1
+(alguns MB, comprimidos); as seguintes só atualizam os últimos dias.
+
+## 1. Servidor (opcional: painel web, backtest, retreino do modelo)
 
 ### Opção A: Python local (Linux, macOS ou Windows/WSL)
 
@@ -13,8 +22,8 @@ python -m fxintel train          # baixa ~2,8 anos de histórico, roda o walk-fo
 python -m fxintel serve          # http://0.0.0.0:8000
 ```
 
-Na primeira execução do servidor, uma **chave de API administrativa** é criada em `var/admin_api_key.txt`.
-Abra `http://localhost:8000`, informe a chave e use o painel.
+Abra `http://localhost:8000` e use o painel. **Não há chave de API por padrão.** Se for expor o servidor à
+internet, inicie-o com `FXI_REQUIRE_API_KEY=1` (a chave é criada em `var/admin_api_key.txt`) e use HTTPS.
 
 Comandos úteis:
 
@@ -32,7 +41,6 @@ Comandos úteis:
 cd deploy
 docker compose up -d --build                 # API + painel em :8000
 docker compose --profile https up -d          # + Caddy com HTTPS automático (edite deploy/Caddyfile)
-docker compose exec fxintel cat /data/admin_api_key.txt
 docker compose exec fxintel python -m fxintel train
 ```
 
@@ -44,11 +52,11 @@ Veja `deploy/fxintel.service` (venv em `/opt/fxintel/.venv`, dados em `/var/lib/
 
 | Variável | Uso |
 |---|---|
-| `FXI_API_KEY` | define uma chave de API fixa (senão, uma é gerada) |
+| `FXI_REQUIRE_API_KEY=1` | passa a exigir chave de API no servidor (padrão: sem chave) |
+| `FXI_API_KEY` | chave fixa quando `FXI_REQUIRE_API_KEY=1` (senão, uma é gerada) |
 | `FXI_DATA_DIR` | dados, cache, modelos, logs e banco (padrão `./var`) |
 | `FXI_CONFIG_DIR` | diretório de `settings.json` e `central_banks.json` (padrão `./config`) |
-| `FXI_OANDA_TOKEN`, `FXI_OANDA_ACCOUNT`, `FXI_OANDA_ENV` | ativam cotações bid/ask reais da OANDA (`practice` ou `live`) |
-| `FXI_LIVE_TRADING=1` | habilita o envio real de ordens via OANDA (cada ordem exige `confirm=true`) |
+| `FXI_OANDA_*`, `FXI_LIVE_TRADING` | **opcionais e desnecessários**: conector de corretora para quem quiser integrar no futuro (as cotações bid/ask já vêm da Swissquote sem chave) |
 | `FXI_AUTO_RETRAIN=0` | desativa o retreino automático diário |
 | `FXI_CORS` | origens permitidas (padrão `*`) |
 | `FXI_EQUITY`, `FXI_UNIVERSE` | atalhos de configuração |
@@ -67,13 +75,10 @@ Veja `deploy/fxintel.service` (venv em `/opt/fxintel/.venv`, dados em `/var/lib/
 
 ## 4. Aplicativo Android
 
-1. Instale `releases/FXIntel-1.0.0.apk` no aparelho (Android 8.0+). É preciso permitir "instalar apps de fontes
-   desconhecidas".
-2. Abra o app → **Ajustes** → informe a URL do servidor e a chave de API → **Testar conexão** → **Salvar**.
-   - Mesma rede Wi-Fi: `http://IP-DO-COMPUTADOR:8000`. Libere a porta 8000 no firewall.
-   - Pela internet: publique o backend com HTTPS (Docker + Caddy) e use `https://seu-dominio`.
-3. Permita notificações para receber alertas.
-4. Na aba **Painel**, toque em **ANALISAR MERCADO AGORA**.
+- **Modo autônomo (padrão):** ver a seção 0. Os instrumentos, o capital e os limites de risco são ajustados em **Ajustes**.
+- **Modo servidor (opcional):** em **Ajustes → Fonte de dados**, desligue "No aparelho" e informe a URL do seu
+  servidor (ex.: `http://192.168.0.10:8000` na mesma rede Wi-Fi). Chave só se o servidor exigir.
+- Permita notificações para receber alertas (sinais acompanhados, eventos críticos, volatilidade).
 
 Para compilar o APK, veja [ANDROID.md](ANDROID.md).
 

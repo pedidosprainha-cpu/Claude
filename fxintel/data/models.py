@@ -27,6 +27,7 @@ class Quote:
     received_at: datetime = field(default_factory=utcnow)
     prev_close: float | None = None
     latency_ms: float | None = None
+    check: dict | None = None   # divergência vs. outras fontes (pips), p.ex. {"truefx_pips": 0.2}
 
     @property
     def mid(self) -> float:

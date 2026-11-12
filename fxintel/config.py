@@ -73,7 +73,9 @@ DEFAULTS: dict[str, Any] = {
         "ev": 0.45, "technical": 0.20, "fundamental": 0.15, "regime": 0.10, "cost": 0.10,
     },
     "providers": {
-        "quotes_order": ["oanda", "yahoo", "goldapi"],
+        # Todas as fontes padrão são públicas e dispensam chave de API.
+        "quotes_order": ["swissquote", "yahoo", "goldapi"],
+        "swissquote_profile": "premium",
         "yahoo_hosts": ["query1.finance.yahoo.com", "query2.finance.yahoo.com"],
         "timeout_s": 15,
         "max_workers": 8,

@@ -21,6 +21,7 @@ import androidx.work.WorkerParameters
 import com.fxintel.app.MainActivity
 import com.fxintel.app.data.AlertItem
 import com.fxintel.app.data.FxApi
+import com.fxintel.app.data.LocalRepo
 import com.fxintel.app.data.Prefs
 import java.util.concurrent.TimeUnit
 
@@ -74,7 +75,17 @@ class AlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
     override suspend fun doWork(): Result {
         val prefs = Prefs(applicationContext)
         val p = prefs.current()
-        if (!p.notifications || p.serverUrl.isBlank() || p.apiKey.isBlank()) return Result.success()
+        if (!p.notifications) return Result.success()
+        if (p.mode != "server") {
+            // modo autônomo: acompanha os sinais e o calendário diretamente no aparelho (sem servidor/chave)
+            return try {
+                val repo = LocalRepo.get(applicationContext)
+                (repo.trackSignals() + repo.eventAlerts()).takeLast(5).forEach { notifyAlert(applicationContext, it) }
+                repo.alerts(0).maxOfOrNull { it.id }?.let { prefs.setLastAlertId(it) }
+                Result.success()
+            } catch (e: Exception) { Result.retry() }
+        }
+        if (p.serverUrl.isBlank()) return Result.success()
         return try {
             val api = FxApi(p.serverUrl, p.apiKey)
             val alerts = api.alerts(p.lastAlertId)
