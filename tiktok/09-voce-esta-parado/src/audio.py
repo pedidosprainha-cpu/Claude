@@ -346,7 +346,7 @@ def main():
 
     sfx = np.zeros((N + SR * 5, 2), np.float32)
     add(sfx, riser(boom + 0.2, 80, 900), -0.2, 0.1)
-    add(sfx, braam(73.42, 2.6), boom, 0.24); add(sfx, impact(1.1), boom, 0.16)
+    add(sfx, braam(73.42, 2.6), boom, 0.2); add(sfx, impact(1.1), boom, 0.16)
     add(sfx, rewind(REW[1] - REW[0] + 0.15), REW[0] - 0.05, 0.24)
     add(sfx, whoosh(1.4, 120, 6000), REW[1] - 0.1, 0.18)
     # um impacto grave e um brilho a cada nível de velocidade, cada vez maior
@@ -356,8 +356,8 @@ def main():
         add(sfx, bell(880 * 2 ** (k / 4), 2.0), t + 0.02, 0.05)
     # transições
     for name in ("orbita", "galaxia", "odometro"):
-        add(sfx, whoosh(0.8, 150, 5000), sc[name] - 0.5, 0.16)
-    add(sfx, whoosh(1.6, 100, 3000), sc["universo"] - 0.6, 0.18)
+        add(sfx, whoosh(0.8, 150, 5000), sc[name] - 0.5, 0.09)
+    add(sfx, whoosh(1.6, 100, 3000), sc["universo"] - 0.6, 0.1)
     # 30 km a cada segundo: um tique por segundo
     t = Wt("orbita", 17)
     while t < sc["galaxia"] - 0.3:
@@ -369,9 +369,9 @@ def main():
     for k, t in enumerate(odo_ticks(sc["odometro"] - 0.2, Wt("odometro", 13) - 0.2, 14)):
         add(sfx, blip(1600 + 40 * (k % 6), 0.04), t, 0.025, pan=0.3 if k % 2 else -0.3)
     add(sfx, bell(1046.5, 2.5), odo, 0.07); add(sfx, bell(1568, 2.5), odo + 0.1, 0.05)
-    add(sfx, whoosh(0.7, 300, 5000), Wt("odometro", 13) - 0.3, 0.14)
+    add(sfx, whoosh(0.7, 300, 5000), Wt("odometro", 13) - 0.3, 0.08)
     for k, f in enumerate([587.33, 698.46, 880.0, 1174.66]):
-        add(sfx, bell(f, 3.5), L["fecho"]["end"] + 0.1 + k * 0.09, 0.05)
+        add(sfx, bell(f, 3.5), L["fecho"]["end"] + 0.1 + k * 0.09, 0.035)
     add(sfx, blip(1568, 0.2), Wt("cta", 0) + 0.6, 0.18)
     add(sfx, bell(2093, 1.5), Wt("cta", 0) + 0.63, 0.06)
     add(sfx, whoosh(0.7, 200, 3000), T - 0.7, 0.16)

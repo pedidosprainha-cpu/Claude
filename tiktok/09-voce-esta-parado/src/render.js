@@ -418,7 +418,7 @@ S.sente = {
   async bg(ctx, t, lt) {
     const cut = Wt('sente', 7);
     if (t < cut) cover(ctx, await atS('flutua', 6 + lt), { z: 1.04 });
-    else cover(ctx, await atS('flutua2', 0.5 + (t - cut)), { z: 1.04 });
+    else cover(ctx, await atS('flutua2', 2.5 + (t - cut)), { z: 1.04 });
   },
   fg(ctx, t, lt) {
     chip(ctx, 'O CORPO SENTE A MUDANÇA, NÃO A VELOCIDADE', 540, 470, win(t, Wt('sente', 13) - 0.1, SCN.iss.t0 + 0.2, 0.3, 0.3), { size: 21 });
@@ -593,7 +593,7 @@ async function frame(i, opts = {}) {
   } else {
     const out = path.join(ROOT, 'build/video.mp4');
     const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
     const tr = Date.now();
     for (let i = 0; i < N; i++) {
       await frame(i);
