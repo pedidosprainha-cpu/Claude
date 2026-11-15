@@ -1,0 +1,3 @@
+# Windows + MetaTrader 5 terminal required for live operation.
+MetaTrader5>=5.0.45
+numpy
