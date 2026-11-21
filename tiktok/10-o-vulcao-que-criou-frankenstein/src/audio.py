@@ -338,7 +338,7 @@ def music_box(t0, t1):
     mel = [4, 2, 1, 2, 4, 3, 2, 1]
     for k in range(int(t0 / step), int(t1 / step) + 1):
         t = k * step; notes = chord_at(t); f = notes[1 + mel[k % 8] % 3] * 4 * (2 if mel[k % 8] > 3 else 1)
-        add(out, bell(f, 1.6), t, 0.07, pan=0.3)
+        add(out, bell(f, 1.6), t, 0.045, pan=0.3)
     return out
 
 
@@ -421,7 +421,7 @@ def main():
     music += cello(0, REW[0], 73.42, 0.16)
     music += cello(sc["verao"] - 0.3, sc["suica"] - sc["verao"] + 0.6, 73.42, 0.14)
     music += cello(sc["fecho"] - 0.3, end - sc["fecho"], 73.42, 0.14)
-    music += make_piano(REW[1] + 0.3, sc["som"], 0.8) + make_piano(sc["suica"], M["visao"], 1.0)
+    music += make_piano(REW[1] + 0.3, sc["som"], 0.8) + make_piano(sc["suica"], M["visao"], 0.7)
     music += music_box(sc["mary"] - 0.2, M["visao"])
     music += pizz(sc["bike"] - 0.2, sc["fecho"] - 0.3)
     music[int(REW[0] * SR): int(REW[1] * SR)] *= 0.1
@@ -435,14 +435,14 @@ def main():
     add(sfx, paper(), Wt("hook2", 3) - 0.1, 0.12); add(sfx, whoosh(0.5, 300, 5000), Wt("hook2", 8) - 0.15, 0.08)
     add(sfx, rewind(REW[1] - REW[0] + 0.15), REW[0] - 0.05, 0.24)
     add(sfx, paper(), Wt("tambora", 3) - 0.2, 0.08)
-    add(sfx, timpani_roll(boom - Wt("tambora", 3)), Wt("tambora", 3), 0.5)
-    add(sfx, impact(1.5), boom, 0.3); add(sfx, rumble(3.5), boom, 0.14); add(sfx, braam(36.71, 3.0), boom, 0.14)
+    add(sfx, timpani_roll(boom - Wt("tambora", 3)), Wt("tambora", 3), 0.35)
+    add(sfx, impact(1.5), boom, 0.2); add(sfx, rumble(3.5), boom, 0.07); add(sfx, braam(36.71, 3.0), boom, 0.08)
     add(sfx, rumble(2.4), sc["som"] - 0.1, 0.1)                              # o estrondo que viaja
     for k in range(4):
         add(sfx, impact(0.4), sc["som"] + 0.1 + k * 0.35, 0.03 * (4 - k))
-    add(sfx, wind(sc["suica"] - sc["verao"] + 0.5), sc["verao"] - 0.3, 0.14)
-    add(sfx, rain_bed(sc["vampiro"] - sc["suica"] + 0.6), sc["suica"] - 0.4, 0.14)
-    for t0, g in ((trov + 0.1, 0.22), (Wt("suica", 6) + 0.2, 0.16), (Wt("suica", 20), 0.18), (M["visao"] + 0.05, 0.2), (Wt("mary", 16), 0.14), (Wt("mary", 17, "t1"), 0.18)):
+    add(sfx, wind(sc["suica"] - sc["verao"] + 0.5), sc["verao"] - 0.3, 0.075)
+    add(sfx, rain_bed(sc["vampiro"] - sc["suica"] + 0.6), sc["suica"] - 0.4, 0.1)
+    for t0, g in ((trov + 0.1, 0.14), (Wt("suica", 6) + 0.2, 0.1), (Wt("suica", 20), 0.12), (M["visao"] + 0.05, 0.13), (Wt("mary", 16), 0.09), (Wt("mary", 17, "t1"), 0.12)):
         add(sfx, thunder(3.5), t0, g, pan=rng.uniform(-0.4, 0.4))
     add(sfx, impact(0.8), frank, 0.1)
     for t0 in (Wt("mary", 18) - 0.05, sc["vampiro"] - 0.4):

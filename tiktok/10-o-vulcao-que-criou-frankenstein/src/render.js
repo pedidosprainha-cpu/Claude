@@ -437,7 +437,7 @@ const TR = { cut: 0, burn: 0.55, dissolve: 0.6 };
 const vignette = (() => { const c = createCanvas(W, H), x = c.getContext('2d'); const g = x.createRadialGradient(W / 2, H * 0.47, H * 0.2, W / 2, H * 0.5, H * 0.75); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.78)'); x.fillStyle = g; x.fillRect(0, 0, W, H); return c; })();
 const topVeil = (() => { const c = createCanvas(W, 700), x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 700); g.addColorStop(0, 'rgba(0,0,0,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, W, 700); return c; })();
 const botVeil = (() => { const c = createCanvas(W, 760), x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 760); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.7)'); x.fillStyle = g; x.fillRect(0, 0, W, 760); return c; })();
-const GRAIN = Array.from({ length: 4 }, (_, k) => { const c = createCanvas(540, 960), x = c.getContext('2d'), im = x.createImageData(540, 960), r = rng(60 + k); for (let q = 0; q < im.data.length; q += 4) { const v = r() * 255; im.data[q] = im.data[q + 1] = im.data[q + 2] = v; im.data[q + 3] = 26; } x.putImageData(im, 0, 0); return c; });
+const GRAIN = Array.from({ length: 4 }, (_, k) => { const c = createCanvas(540, 960), x = c.getContext('2d'), im = x.createImageData(540, 960), r = rng(60 + k); for (let q = 0; q < im.data.length; q += 4) { const v = r() * 255; im.data[q] = im.data[q + 1] = im.data[q + 2] = v; im.data[q + 3] = 15; } x.putImageData(im, 0, 0); return c; });
 const canvas = createCanvas(W, H), ctx = canvas.getContext('2d');
 const bufA = createCanvas(W, H), ctxA = bufA.getContext('2d');
 const bufB = createCanvas(W, H), ctxB = bufB.getContext('2d');
@@ -521,7 +521,7 @@ async function frame(i, opts = {}) {
   } else {
     const out = path.join(ROOT, 'build/video.mp4');
     const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-',
-      '-c:v', 'libx264', '-preset', 'slow', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
     const tr = Date.now();
     for (let i = 0; i < N; i++) {
       await frame(i);

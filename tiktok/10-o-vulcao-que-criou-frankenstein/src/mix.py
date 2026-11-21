@@ -14,7 +14,7 @@ GRAPH = (
     "aformat=sample_rates=48000:channel_layouts=stereo,asplit=4[v][vsc][vsc2][vr];"
     "[3:a]aformat=sample_rates=48000:channel_layouts=stereo[ir];"
     "[vr][ir]afir=dry=1:wet=1,volume=-19dB[vrev];"
-    "[1:a]volume=-6dB[m0];"
+    "[1:a]volume=-6dB,equalizer=f=2500:t=q:w=1.4:g=-3[m0];"
     "[m0][vsc]sidechaincompress=threshold=0.02:ratio=6:attack=25:release=350:makeup=1[m];"
     "[2:a]volume=-7dB,alimiter=limit=0.7:attack=2:release=60[s0];"
     "[s0][vsc2]sidechaincompress=threshold=0.03:ratio=4:attack=10:release=250:makeup=1[s];"
