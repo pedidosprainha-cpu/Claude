@@ -1,0 +1,7 @@
+{
+  "name": "o-vulcao-que-criou-frankenstein",
+  "version": "1.0.0",
+  "private": true,
+  "description": "História #1 - O vulcão que criou o Frankenstein (acervos de domínio público)",
+  "dependencies": { "@napi-rs/canvas": "0.1.65" }
+}

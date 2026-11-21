@@ -1,0 +1,70 @@
+{
+  "voz": "pt-BR-AntonioNeural",
+  "velocidade": "+10%",
+  "tom": "-3Hz",
+  "falas": [
+    {
+      "id": "hook",
+      "texto": "Um vulcão do outro lado do mundo ajudou a criar o Frankenstein.",
+      "velocidade": "+2%",
+      "tom": "-5Hz"
+    },
+    {
+      "id": "hook2",
+      "texto": "E também o primeiro vampiro aristocrata... e o avô da bicicleta.",
+      "velocidade": "+8%"
+    },
+    {
+      "id": "tambora",
+      "texto": "Abril de 1815. Na Indonésia, o monte Tambora explode, na maior erupção da história registrada.",
+      "velocidade": "+8%",
+      "tom": "-4Hz"
+    },
+    {
+      "id": "som",
+      "texto": "O estrondo foi ouvido a mais de dois mil quilômetros.",
+      "velocidade": "+8%"
+    },
+    {
+      "id": "nuvem",
+      "texto": "Uma nuvem de enxofre cobriu o planeta e bloqueou parte da luz do Sol.",
+      "velocidade": "+10%"
+    },
+    {
+      "id": "verao",
+      "texto": "Em 1816, o mundo ficou sem verão: nevou em junho nos Estados Unidos, e a Europa passou fome.",
+      "velocidade": "+10%"
+    },
+    {
+      "id": "suica",
+      "texto": "Na Suíça, choveu sem parar. Presos numa casa à beira de um lago, Lord Byron e os amigos fizeram um desafio: escrever histórias de terror.",
+      "velocidade": "+12%"
+    },
+    {
+      "id": "mary",
+      "texto": "Mary Shelley, de dezoito anos, passou dias sem ideia... até imaginar um cientista dando vida a um corpo. Nasceu Frankenstein.",
+      "velocidade": "+8%"
+    },
+    {
+      "id": "vampiro",
+      "texto": "Ali também, o médico de Byron, John Polidori, criou O Vampiro: o primeiro vampiro aristocrata da literatura.",
+      "velocidade": "+10%"
+    },
+    {
+      "id": "bike",
+      "texto": "Na Alemanha, sem aveia, muitos cavalos morreram. E, para alguns historiadores, foi por isso que Karl Drais inventou o avô da bicicleta.",
+      "velocidade": "+12%"
+    },
+    {
+      "id": "fecho",
+      "texto": "Na época, ninguém sabia que a culpa era de um vulcão. Isso só foi descoberto um século depois.",
+      "velocidade": "+6%",
+      "tom": "-4Hz"
+    },
+    {
+      "id": "cta",
+      "texto": "Segue pra mais curiosidades aleatórias.",
+      "velocidade": "+10%"
+    }
+  ]
+}
