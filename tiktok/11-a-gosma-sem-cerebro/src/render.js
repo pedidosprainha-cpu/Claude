@@ -266,8 +266,8 @@ S.labirinto = {
       const fa = win(t, M.lab_comida - 0.05, SCN.toquio.t0 + 0.3, 0.3, 0.3);
       const [ex, ey] = P(T, ...m.entrada), [sx, sy] = P(T, ...m.saida);
       glowAt(ctx, ex, ey, 70, [255, 240, 200], 0.35 * fa * (0.7 + 0.3 * Math.sin(t * 5))); glowAt(ctx, sx, sy, 70, [255, 240, 200], 0.35 * fa * (0.7 + 0.3 * Math.sin(t * 5 + 1)));
-      chip(ctx, 'COMIDA', ex + 80, ey - 70, fa, { size: 18, align: 'left' });
-      chip(ctx, 'COMIDA', sx - 80, sy + 72, fa, { size: 18, align: 'right' });
+      chip(ctx, 'COMIDA', ex + 62, ey + 4, fa, { size: 18, align: 'left' });
+      chip(ctx, 'COMIDA', sx - 62, sy - 64, fa, { size: 18, align: 'right' });
     }
     const sel = clamp((t - M.lab_largou) / (M.lab_curto + 0.7 - M.lab_largou));
     relogio(ctx, 'DEPOIS DA COMIDA', `${(8 * sel).toFixed(1).replace('.', ',')} h`, win(t, M.lab_largou - 0.1, SCN.toquio.t0 + 0.2, 0.3, 0.3), t);
@@ -422,7 +422,7 @@ S.fecho = {
     const a = win(t, M.zero - 0.3, SCN.cta.t0 + 0.2, 0.35, 0.4), pop = easeOutBack((t - M.zero + 0.3) / 0.45);
     if (a > 0) {
       ctx.save(); ctx.translate(540, 820); ctx.scale(0.8 + 0.2 * pop, 0.8 + 0.2 * pop);
-      text(ctx, '0', 0, 80, { font: `400 330px ${SERIF}`, color: '#fff6df', align: 'center', alpha: a, shadow: 40 });
+      text(ctx, '0', 0, 80, { font: `900 300px ${FONT}`, color: '#fff6df', align: 'center', alpha: a, shadow: 40, stroke: 14 });
       text(ctx, 'NEURÔNIOS', 0, 170, { font: `500 34px ${MONO_M}`, color: 'rgba(255,224,140,0.95)', align: 'center', spacing: 14, alpha: a });
       ctx.restore();
     }
