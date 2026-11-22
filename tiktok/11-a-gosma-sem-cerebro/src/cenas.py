@@ -214,11 +214,13 @@ def toquio():
         for a, c in zip(parts, parts[1:]): d.polygon([P(*q) for q in s.points[a:c]], fill=255)
     m = np.asarray(terra) > 0
     # fundo: placa com o mapa "projetado" no ágar (terra mais clara, mar escuro e a linha da costa)
-    fundo = placa(6, tom=(0.05, 0.05, 0.055))
-    tf = gaussian_filter(m.astype(np.float32), 2)
-    fundo = fundo * (0.55 + 0.9 * tf[..., None]) + tf[..., None] * np.array([0.045, 0.04, 0.03])
+    tex = placa(6, tom=(0.06, 0.06, 0.06))
+    tf = gaussian_filter(m.astype(np.float32), 1.6)[..., None]
+    terra_c = tex * 2.6 + np.array([0.075, 0.068, 0.05])          # ágar claro sobre a terra
+    mar_c = tex * 0.5 + np.array([0.010, 0.022, 0.040])           # mar escuro, azulado
+    fundo = terra_c * tf + mar_c * (1 - tf)
     costa = np.clip(gaussian_filter(m.astype(np.float32), 1.2) * (1 - gaussian_filter(m.astype(np.float32), 1.2)) * 4, 0, 1)
-    fundo = np.clip(fundo + costa[..., None] * np.array([0.18, 0.2, 0.24]), 0, 1).astype(np.float32)
+    fundo = np.clip(fundo + costa[..., None] * np.array([0.22, 0.26, 0.3]), 0, 1).astype(np.float32)
     CID = json.loads((ROOT / "assets" / "cidades.json").read_text())
     fundo_c = fundo.copy()
     for k, (nome, (lo, la)) in enumerate(CID.items()):
@@ -234,12 +236,12 @@ def toquio():
     Ng, Na = 150, 300
     for k in range(Ng):  # a gosma sai de Tóquio e cobre a terra
         F = 20 + (alcance + 40) * (k / (Ng - 1)) ** 1.15
-        pl.avancar(F, comida=cid, passos=3, dt=0.1, I0=6.0, gama=1.8, banda=40)
+        pl.avancar(F, comida=cid, passos=3, dt=0.1, I0=20.0, gama=1.8, banda=40)
         tb, lc = pl.segmentos(F, rmax=6.5, banda=40)
         S.quadro(tb, lc, larg=20)
     F = alcance + 500
     for k in range(Na):  # rede adaptativa (Tero 2010)
-        pl.avancar(F, comida=cid, passos=5, dt=0.1, I0=6.0, gama=1.8, banda=40)
+        pl.avancar(F, comida=cid, passos=5, dt=0.1, I0=20.0, gama=1.8, banda=40)
         tb, lc = pl.segmentos(F, rmax=6.5, banda=40)
         S.quadro(tb, [], larg=20)
     # trilhos reais (Natural Earth) e cidades, em pixels, para o render.js desenhar por cima
@@ -268,11 +270,12 @@ def rastro():
     # muco: o braço esquerdo já foi explorado antes (filme translúcido)
     rng = np.random.default_rng(3)
     mu = [(x, y, x + rng.normal(0, 30), y + rng.normal(0, 30), 0.9) for x, y in p[(p[:, 0] < 500) & (p[:, 1] < 1000)][::3]]
+    alvo = [int(np.argmin(np.hypot(p[:, 0] - 830, p[:, 1] - 480)))]   # a aveia do braço livre
     S = Saida("rastro", {"bg": fundo})
     N = 150
     for k in range(N):
         F = 30 + 1450 * (k / (N - 1)) ** 1.1
-        pl.avancar(F, comida=[], passos=2, I0=4.0, gama=1.3, banda=45)
+        pl.avancar(F, comida=alvo, passos=2, I0=4.0, gama=1.3, banda=45)
         tb, lc = pl.segmentos(F, rmax=9, banda=45)
         S.quadro(tb, lc, muco=mu)
     S.fim({"bracos": {"muco": [250, 480], "livre": [830, 480]}})
