@@ -1,0 +1,61 @@
+{
+  "motor": "chatterbox-multilingual",
+  "idioma": "pt",
+  "referencia_sotaque": "voz/ref_sotaque.wav",
+  "referencia_timbre": "voz/ref_timbre.wav",
+  "expressao": 0.7,
+  "cfg": 0.35,
+  "tomadas": 2,
+  "falas": [
+    {
+      "id": "hook",
+      "tomadas": 3,
+      "texto": "Essa gosma amarela não tem cérebro. Nem um neurônio. E mesmo assim, ela redesenhou a rede de trens de Tóquio.",
+      "pausas": [0.3, 0.42]
+    },
+    {
+      "id": "hook2",
+      "tomadas": 3,
+      "texto": "Ah, e ela aprende. E ensina.",
+      "pausas": [0.22]
+    },
+    {
+      "id": "nome",
+      "texto": "O nome dela é Physarum. E não, não é fungo. Nem planta, nem bicho. É uma célula só... que dá pra ver a olho nu.",
+      "fala": "O nome dela é Fisárum. E não, não é fungo. Nem planta, nem bicho. É uma célula só... que dá pra ver a olho nu.",
+      "pausas": [0.3, 0.2, 0.3]
+    },
+    {
+      "id": "labirinto",
+      "texto": "Em 2000, um cientista japonês botou ela num labirinto, com comida na entrada e na saída. Ela se espalhou por tudo... depois largou os becos sem saída, e sobrou só o caminho mais curto.",
+      "fala": "Em dois mil, um cientista japonês botou ela num labirinto, com comida na entrada e na saída. Ela se espalhou por tudo... depois largou os becos sem saída, e sobrou só o caminho mais curto.",
+      "pausas": [0.32]
+    },
+    {
+      "id": "toquio",
+      "texto": "Anos depois, a equipe dele fez um mapa de Tóquio com flocos de aveia, um em cada cidade. Em pouco mais de um dia, ela ligou todas... numa rede muito parecida com a dos trens de verdade.",
+      "pausas": [0.3]
+    },
+    {
+      "id": "regra",
+      "texto": "O segredo? Tubo que leva mais fluxo engrossa. Tubo que quase ninguém usa... vai sumindo.",
+      "pausas": [0.35, 0.22]
+    },
+    {
+      "id": "memoria",
+      "texto": "E fica mais estranho: ela deixa um rastro pra lembrar onde já passou, aprende a atravessar o sal, que ela odeia... e se você junta ela com outra que nunca viu sal, a outra aprende também.",
+      "pausas": []
+    },
+    {
+      "id": "fecho",
+      "tomadas": 3,
+      "texto": "Tudo isso sem um único neurônio. Então me diz: o que é inteligência, afinal?",
+      "pausas": [0.55]
+    },
+    {
+      "id": "cta",
+      "texto": "Segue pra mais curiosidades aleatórias.",
+      "pausas": []
+    }
+  ]
+}
