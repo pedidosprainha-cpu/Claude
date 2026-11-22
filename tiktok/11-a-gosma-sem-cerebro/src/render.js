@@ -499,7 +499,8 @@ async function frame(i, opts = {}) {
 (async () => {
   const argv = process.argv.slice(2), pi = argv.indexOf('--preview');
   if (argv.includes('--capa')) {
-    await shot(ctx, 'macro', NM() - 1, { z: 1.32, cx: 560, cy: 1000 });
+    const T = await shot(ctx, 'toquio', COUNT.toquio - 1, { z: 1.12, cx: 560, cy: 860 });
+    trilhos(ctx, T, 1, 0.85);
     bloom(0.35);
     ctx.drawImage(vignette, 0, 0);
     const g = ctx.createLinearGradient(0, 1000, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.45, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0.96)');
@@ -507,7 +508,8 @@ async function frame(i, opts = {}) {
     text(ctx, 'PHYSARUM POLYCEPHALUM', W / 2, 1290, { font: `26px ${MONO_M}`, color: 'rgba(255,224,140,0.95)', align: 'center', spacing: 10 });
     text(ctx, 'A gosma sem cérebro', W / 2, 1420, { font: `italic 400 104px ${SERIF_I}`, color: '#fff6df', align: 'center', shadow: 30 });
     text(ctx, 'que refez os trens de Tóquio', W / 2, 1520, { font: `italic 400 72px ${SERIF_I}`, color: '#fff6df', align: 'center', shadow: 30 });
-    text(ctx, 'Simulação com o modelo de Tero et al.', W - 60, 1780, { font: `500 18px ${FONT}`, color: 'rgba(240,228,205,0.6)', align: 'right' });
+    chip(ctx, 'TRILHOS DE VERDADE', 300, 1640, 1, { size: 18, dot: rgba(C.rail) }); chip(ctx, 'REDE DA GOSMA', 780, 1640, 1, { size: 18, dot: rgba(C.slime) });
+    text(ctx, 'Simulação com o modelo de Tero et al. · mapa: Natural Earth', W - 60, 1780, { font: `500 18px ${FONT}`, color: 'rgba(240,228,205,0.6)', align: 'right' });
     const out = path.join(ROOT, 'output/capa.png'); fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, canvas.toBuffer('image/png')); console.log(out);
   } else if (pi >= 0) {

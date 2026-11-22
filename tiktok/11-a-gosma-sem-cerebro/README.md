@@ -12,7 +12,8 @@ O *Physarum polycephalum*, o "blob", é um bolor limoso. Não é fungo, planta n
 |---|---|
 | Arquivo final | `output/video-11-a-gosma-sem-cerebro.mp4` |
 | Capa | `output/capa.png` |
-| Duração | ~75 s · 1080×1920 · 30 fps · -14 LUFS |
+| Antes e depois da voz | `output/antes-e-depois-da-voz.m4a` (o mesmo gancho na voz antiga e na nova) |
+| Duração | ~83 s · 1080×1920 · 30 fps · -14 LUFS |
 | Loop | termina na mesma imagem do primeiro quadro |
 
 ## Narração nova: mais natural
